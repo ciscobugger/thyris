@@ -1,0 +1,161 @@
+diff -ru a/libcef/browser/browser_info.cc b/libcef/browser/browser_info.cc
+--- a/libcef/browser/browser_info.cc
++++ b/libcef/browser/browser_info.cc
+@@ -47,6 +47,14 @@
+   }
+ }
+ 
++void CefBrowserInfo::SetExtraInfo(CefRefPtr<CefDictionaryValue> extra_info) {
++  CefRefPtr<CefDictionaryValue> copy =
++      extra_info->Copy(/*exclude_empty_children=*/false);
++  static_cast<CefDictionaryValueImpl*>(copy.get())->MarkReadOnly();
++  base::AutoLock lock_scope(extra_info_lock_);
++  extra_info_ = copy;
++}
++
+ CefBrowserInfo::~CefBrowserInfo() {
+   DCHECK(frame_info_set_.empty());
+ }
+diff -ru a/libcef/browser/browser_info.h b/libcef/browser/browser_info.h
+--- a/libcef/browser/browser_info.h
++++ b/libcef/browser/browser_info.h
+@@ -46,7 +46,13 @@
+   int browser_id() const { return browser_id_; }
+   bool is_popup() const { return is_popup_; }
+   const cef::BrowserConfig& config() const { return config_; }
+-  CefRefPtr<CefDictionaryValue> extra_info() const { return extra_info_; }
++  CefRefPtr<CefDictionaryValue> extra_info() const {
++    base::AutoLock lock_scope(extra_info_lock_);
++    return extra_info_;
++  }
++  // Tacit (2026-10-08): replaces it for render processes started from now on
++  // (Opsis's page scripts, CefFrameHostImpl::SendProcessMessage).
++  void SetExtraInfo(CefRefPtr<CefDictionaryValue> extra_info);
+ 
+   // May return nullptr if the browser has not yet been created (before
+   // SetBrowser) or if the browser has been destroyed (after BrowserDestroyed).
+@@ -203,6 +209,7 @@
+   const bool is_popup_;
+   const cef::BrowserConfig config_;
+   CefRefPtr<CefDictionaryValue> extra_info_;
++  mutable base::Lock extra_info_lock_;
+ 
+   // Navigation will be blocked while |navigation_lock_| exists.
+   // Only accessed on the UI thread.
+diff -ru a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.cc
+--- a/libcef/browser/frame_host_impl.cc
++++ b/libcef/browser/frame_host_impl.cc
+@@ -278,6 +278,16 @@
+     return;
+   }
+ 
++  // Tacit (2026-10-08): Opsis's page scripts also go to the render processes
++  // this browser starts later, as their extra info.
++  if (message->GetName() == "opsis.scripts") {
++    CefRefPtr<CefListValue> args = message->GetArgumentList();
++    auto browser_info = GetBrowserInfo();
++    if (browser_info && args && args->GetType(0) == VTYPE_DICTIONARY) {
++      browser_info->SetExtraInfo(args->GetDictionary(0));
++    }
++  }
++
+   if (message->GetArgumentList() != nullptr) {
+     // Invalidate the message object immediately by taking the argument list.
+     auto argument_list =
+diff -ru a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
+--- a/libcef/renderer/frame_impl.cc
++++ b/libcef/renderer/frame_impl.cc
+@@ -74,6 +74,12 @@
+ 
+ }  // namespace
+ 
++// Tacit (2026-10-08): Opsis checks for its world with this (libcef exports
++// cef_* only, libcef_dll/libcef.lst).
++extern "C" __attribute__((visibility("default"))) int cef_tacit_opsis_world() {
++  return kOpsisWorldId;
++}
++
+ CefFrameImpl::CefFrameImpl(CefBrowserImpl* browser, blink::WebLocalFrame* frame)
+     : browser_(browser),
+       frame_(frame),
+@@ -879,6 +885,15 @@
+       base::BindOnce(
+           [](const std::u16string& jsCode, const std::string& scriptUrl,
+              blink::WebLocalFrame* frame) {
++            // Tacit (2026-10-08): Opsis's world, made on first use.
++            if (scriptUrl.starts_with("opsis-world:")) {
++              frame->ExecuteScriptInIsolatedWorld(
++                  kOpsisWorldId,
++                  blink::WebScriptSource(blink::WebString::FromUtf16(jsCode),
++                                         GURL(scriptUrl)),
++                  blink::BackForwardCacheAware::kAllow);
++              return;
++            }
+             frame->ExecuteScript(blink::WebScriptSource(
+                 blink::WebString::FromUtf16(jsCode), GURL(scriptUrl)));
+           },
+diff -ru a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
+--- a/libcef/renderer/frame_impl.h
++++ b/libcef/renderer/frame_impl.h
+@@ -17,6 +17,13 @@
+ #include "cef/libcef/renderer/blink_glue.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
++
++// Tacit (2026-10-08): Opsis's own isolated world. A script sent with an
++// "opsis-world:" address runs there (SendJavaScript), and the render process
++// handler hears of this world's contexts besides the main world's
++// (CefRenderFrameObserver). Below blink's kEmbedderWorldIdLimit (1 << 29) and
++// clear of the content, chrome and extension ids, which count up from 0.
++inline constexpr int kOpsisWorldId = 1 << 28;
+ #include "mojo/public/cpp/bindings/remote.h"
+ 
+ namespace base {
+diff -ru a/libcef/renderer/render_frame_observer.cc b/libcef/renderer/render_frame_observer.cc
+--- a/libcef/renderer/render_frame_observer.cc
++++ b/libcef/renderer/render_frame_observer.cc
+@@ -122,6 +122,11 @@
+   if (!frame_) {
+     return;
+   }
++  // Tacit (2026-10-08): the main world and Opsis's (kOpsisWorldId) only, so
++  // the handler can tell Opsis's contexts by their not being the main one.
++  if (world_id != 0 && world_id != kOpsisWorldId) {
++    return;
++  }
+ 
+   blink::WebLocalFrame* frame = render_frame()->GetWebFrame();
+   CefRefPtr<CefBrowserImpl> browserPtr =
+@@ -151,7 +156,11 @@
+   }
+ 
+   // Do this last, in case the client callback modified the window object.
+-  framePtr->OnContextCreated(context);
++  // Tacit: the main world's only. Opsis makes its world from inside the main
++  // world's callback, while this drains the frame's queued actions.
++  if (world_id == 0) {
++    framePtr->OnContextCreated(context);
++  }
+ }
+ 
+ void CefRenderFrameObserver::WillReleaseScriptContext(
+@@ -172,7 +181,7 @@
+ 
+   CefRefPtr<CefFrameImpl> framePtr = browserPtr->GetWebFrameImpl(frame);
+ 
+-  if (handler) {
++  if (handler && (world_id == 0 || world_id == kOpsisWorldId)) {
+     v8::Isolate* isolate = v8::Isolate::GetCurrent();
+     v8::HandleScope handle_scope(isolate);
+ 
+@@ -186,7 +195,9 @@
+     handler->OnContextReleased(browserPtr.get(), framePtr.get(), contextPtr);
+   }
+ 
+-  framePtr->OnContextReleased();
++  if (world_id == 0) {
++    framePtr->OnContextReleased();
++  }
+ 
+   CefV8ReleaseContext(context);
+ }

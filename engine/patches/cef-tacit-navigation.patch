@@ -1,0 +1,47 @@
+diff -ru a/libcef/browser/browser_host_base.cc b/libcef/browser/browser_host_base.cc
+--- a/libcef/browser/browser_host_base.cc
++++ b/libcef/browser/browser_host_base.cc
+@@ -4,6 +4,9 @@
+ 
+ #include "cef/libcef/browser/browser_host_base.h"
+ 
++#include "base/strings/string_number_conversions.h"
++#include "content/public/browser/navigation_controller.h"
++
+ #include <tuple>
+ 
+ #include "base/logging.h"
+@@ -1390,6 +1393,33 @@
+   CEF_REQUIRE_UIT();
+   auto web_contents = GetWebContents();
+   if (web_contents) {
++    // Tacit (2026-10-08): Opsis's history steps and loads over the current
++    // entry, through LoadURL rather than new API: "opsis-history:<offset>"
++    // goes to that entry, "opsis-replace:<url>" loads url in place of the
++    // current entry (a failed attempt leaves none, as in Qt WebEngine).
++    if (params.url.SchemeIs("opsis-history")) {
++      int offset = 0;
++      auto& controller = web_contents->GetController();
++      if (base::StringToInt(params.url.GetContent(), &offset) &&
++          controller.CanGoToOffset(offset)) {
++        controller.GoToOffset(offset);
++      }
++      return true;
++    }
++    if (params.url.SchemeIs("opsis-replace")) {
++      GURL target(params.url.GetContent());
++      if (!url_util::FixupGURL(target)) {
++        return false;
++      }
++      content::NavigationController::LoadURLParams load(target);
++      load.referrer = params.referrer;
++      load.transition_type = params.transition;
++      load.extra_headers = params.extra_headers;
++      load.should_replace_current_entry = true;
++      web_contents->GetController().LoadURLWithParams(load);
++      return true;
++    }
++
+     GURL gurl = params.url;
+     if (!url_util::FixupGURL(gurl)) {
+       return false;

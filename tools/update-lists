@@ -1,0 +1,44 @@
+#!/bin/sh
+# Downloads uBlock Origin's default filter lists and converts its scriptlets for the adblock engine.
+# Output: ${XDG_DATA_HOME:-~/.local/share}/browser/adblock/{lists/*.txt,resources.json}
+# The browser reads them at startup.
+set -eu
+
+out=${XDG_DATA_HOME:-$HOME/.local/share}/browser/adblock
+here=$(dirname "$(readlink -f "$0")")
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir "$tmp/lists"
+
+u=https://ublockorigin.github.io/uAssets/filters
+for f in filters privacy badware quick-fixes unbreak; do
+    curl -fsSL "$u/$f.txt" -o "$tmp/lists/ubo-$f.txt"
+done
+# uAssets splits lists with !#include; the mobile-only list is skipped.
+for f in "$tmp"/lists/ubo-*.txt; do
+    grep -E '^!#include ' "$f" | awk '{print $2}' | while read -r inc; do
+        case $inc in *mobile*) continue ;; esac
+        dest="$tmp/lists/inc-$(basename "$inc")"
+        [ -f "$dest" ] || curl -fsSL "$u/$inc" -o "$dest"
+    done
+done
+curl -fsSL https://easylist.to/easylist/easylist.txt -o "$tmp/lists/easylist.txt"
+curl -fsSL https://easylist.to/easylist/easyprivacy.txt -o "$tmp/lists/easyprivacy.txt"
+curl -fsSL 'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext' \
+    -o "$tmp/lists/pgl.txt"
+
+# Scriptlets and redirect stand-ins: uBO's builtin sets from its source, plus Brave's own resources.
+curl -fsSL https://codeload.github.com/gorhill/uBlock/tar.gz/refs/heads/master \
+    | tar -xz -C "$tmp" --strip-components=1 uBlock-master/src/js uBlock-master/src/web_accessible_resources
+curl -fsSL https://raw.githubusercontent.com/brave/adblock-resources/master/dist/resources.json -o "$tmp/brave.json"
+node "$here/ubo-resources.mjs" "$tmp/src/js/resources/scriptlets.js" "$tmp/brave.json" "$tmp/resources.json" "$tmp/src"
+
+# Swap the whole set in at once so a starting browser never reads a half-written one.
+mkdir -p "$(dirname "$out")"
+rm -rf "$out.new" "$out.old"
+mkdir "$out.new"
+mv "$tmp/lists" "$tmp/resources.json" "$out.new/"
+[ -d "$out" ] && mv "$out" "$out.old"
+mv "$out.new" "$out"
+rm -rf "$out.old"
+echo "updated $out: $(ls "$out/lists" | wc -l) lists, $(cat "$out"/lists/*.txt | wc -l) filter lines"

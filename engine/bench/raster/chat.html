@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>chat</title>
+<style>html,body{margin:0;height:100%;background:#0b141a;color:#e9edef;font:14.2px "Segoe UI",system-ui,sans-serif}
+#c{position:fixed;inset:0;overflow-y:auto;padding:20px 8%}.m{max-width:62%;margin:2px 0;padding:6px 9px 8px;border-radius:8px;background:#202c33;box-shadow:0 1px .5px #0b141a80}
+.o{margin-left:auto;background:#005c4b}.n{font-size:12.8px;font-weight:500;margin-bottom:2px}.t{float:right;font-size:11px;color:#ffffff99;margin:8px 0 -5px 10px}</style>
+<div id="c"></div>
+<script>
+const w = "hey okay sure tomorrow we can call later thanks see you at the meeting sounds good what about lunch I'll send the files tonight".split(" ");
+const em = ["😂","👍","🙏","❤️","😅","🎉","🔥","😊","🤔","👀"]; let h = "";
+for (let i = 0; i < 600; i++) {
+  const n = 6 + (i * 13) % 40, txt = Array.from({length: n}, (_, k) => (k % 9 === 4 ? em[(i + k) % em.length] : w[(i * 7 + k * 3) % w.length])).join(" ");
+  const mine = i % 3 === 0, hue = (i * 37) % 360;
+  h += `<div class="m${mine ? " o" : ""}">${mine ? "" : `<div class="n" style="color:hsl(${hue} 70% 65%)">~ Person ${i % 23}</div>`}${txt}<span class="t">${10 + i % 12}:${String(i % 60).padStart(2, "0")}</span></div>`;
+}
+document.getElementById("c").innerHTML = h;
+</script>

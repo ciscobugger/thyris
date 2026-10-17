@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>drop: waiting</title>
+<!-- tools/cef-page drop: a drop zone filling the page; what is dropped on it goes into the title. -->
+<style>html,body{margin:0;height:100%} #z{position:fixed;inset:0;background:#e8f0e8;display:grid;place-items:center;font:24px sans-serif}</style>
+<div id="z">drop here</div>
+<script>
+const z = document.getElementById('z');
+z.addEventListener('dragover', e => e.preventDefault());
+z.addEventListener('drop', e => { e.preventDefault(); document.title = 'dropped: ' + e.dataTransfer.getData('text/plain')
+  + ' | files ' + e.dataTransfer.files.length + (e.dataTransfer.files.length ? ' ' + e.dataTransfer.files[0].name : ''); });
+</script>

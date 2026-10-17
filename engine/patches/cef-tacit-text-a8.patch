@@ -1,0 +1,72 @@
+diff --git a/src/ports/SkFontHost_FreeType.cpp b/src/ports/SkFontHost_FreeType.cpp
+index f8043f2..6a6bb5c 100644
+--- a/src/ports/SkFontHost_FreeType.cpp
++++ b/src/ports/SkFontHost_FreeType.cpp
+@@ -36,6 +36,16 @@
+ #include "src/core/SkScalerContext.h"
+ #include "src/core/SkTSearch.h"
+ #include "src/ports/SkFontHost_FreeType_common.h"
++#include <cstdlib>
++
++// Tacit (2026-10-07): Chromium's Linux build leaves SK_GAMMA_APPLY_TO_A8 undefined, so grey (A8) glyph masks were never
++// blended with the text gamma and contrast at all, only LCD ones. With TACIT_TEXT_GAMMA set (the session's or Opsis's),
++// grey masks take the same pre-blend as the patched SkScalerContext gives them; unset, Skia as it was.
++static bool SkTacitTextApplyToA8() {
++    static const bool on = [] { const char* v = getenv("TACIT_TEXT_GAMMA"); return v != nullptr && *v != '\0'; }();
++    return on;
++}
++
+ #include "src/ports/SkFontScanner_FreeType_priv.h"
+ #include "src/ports/SkTypeface_FreeType.h"
+ #include "src/sfnt/SkOTUtils.h"
+@@ -844,7 +854,7 @@ void SkTypeface_FreeType::onFilterRec(SkScalerContextRec* rec) const {
+     rec->setHinting(h);
+ 
+ #ifndef SK_GAMMA_APPLY_TO_A8
+-    if (!isLCD(*rec)) {
++    if (!isLCD(*rec) && !SkTacitTextApplyToA8()) {
+         // SRGBTODO: Is this correct? Do we want contrast boost?
+         rec->ignorePreBlend();
+     }
+diff --git a/src/ports/SkFontHost_FreeType_common.cpp b/src/ports/SkFontHost_FreeType_common.cpp
+index 865d761..ca4e5eb 100644
+--- a/src/ports/SkFontHost_FreeType_common.cpp
++++ b/src/ports/SkFontHost_FreeType_common.cpp
+@@ -7,6 +7,16 @@
+  */
+ 
+ #include "src/ports/SkFontHost_FreeType_common.h"
++#include <cstdlib>
++
++// Tacit (2026-10-07): Chromium's Linux build leaves SK_GAMMA_APPLY_TO_A8 undefined, so grey (A8) glyph masks were never
++// blended with the text gamma and contrast at all, only LCD ones. With TACIT_TEXT_GAMMA set (the session's or Opsis's),
++// grey masks take the same pre-blend as the patched SkScalerContext gives them; unset, Skia as it was.
++static bool SkTacitTextApplyToA8() {
++    static const bool on = [] { const char* v = getenv("TACIT_TEXT_GAMMA"); return v != nullptr && *v != '\0'; }();
++    return on;
++}
++
+ 
+ #include "include/core/SkBitmap.h"
+ #include "include/core/SkCanvas.h"
+@@ -1883,7 +1893,11 @@ void SkScalerContextFTUtils::generateGlyphImage(FT_Face face, const SkGlyph& gly
+ // We used to always do this pre-USE_COLOR_LUMINANCE, but with colorlum,
+ // it is optional
+ #if defined(SK_GAMMA_APPLY_TO_A8)
+-    if (SkMask::kA8_Format == glyph.maskFormat() && preBlend.isApplicable()) {
++    const bool applyToA8 = true;
++#else
++    const bool applyToA8 = SkTacitTextApplyToA8();
++#endif
++    if (applyToA8 && SkMask::kA8_Format == glyph.maskFormat() && preBlend.isApplicable()) {
+         uint8_t* SK_RESTRICT dst = (uint8_t*)imageBuffer;
+         unsigned rowBytes = glyph.rowBytes();
+ 
+@@ -1894,7 +1908,6 @@ void SkScalerContextFTUtils::generateGlyphImage(FT_Face face, const SkGlyph& gly
+             dst += rowBytes;
+         }
+     }
+-#endif
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////////

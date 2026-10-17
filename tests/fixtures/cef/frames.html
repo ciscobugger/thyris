@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><title>frames</title>
+<!-- tools/cef-page: a page that changes every frame (a canvas of moving discs, a column of scrolling text) and writes
+     what it measured of its own frames to its title once a second: frames a second, gaps over 25 ms, the worst gap. -->
+<style>html,body{margin:0;height:100%;background:#16120f;color:#efeae9;font:15px/1.5 sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0} #t{position:fixed;left:340px;top:40px;width:760px;height:980px;overflow:hidden}
+#t div{animation:up 12s linear infinite} @keyframes up{from{transform:translateY(0)}to{transform:translateY(-50%)}}</style>
+<canvas id="c"></canvas><div id="t"><div id="tx"></div></div>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d'); c.width = innerWidth; c.height = innerHeight;
+let s = ''; for (let i = 0; i < 120; i++) s += `<p>Paragraph ${i}: the quick brown fox jumps over the lazy dog, laid out and painted as the text scrolls.</p>`;
+document.getElementById('tx').innerHTML = s + s;
+let n = 0, late = 0, worst = 0, last = 0, since = performance.now();
+function frame(t) {
+  if (last) { const gap = t - last; worst = Math.max(worst, gap); late += gap > 25; } last = t; n++;
+  const w = c.width, h = c.height, gr = g.createLinearGradient(0, 0, w, h);
+  gr.addColorStop(0, `hsl(${(t / 40) % 360} 40% 22%)`); gr.addColorStop(1, `hsl(${(t / 40 + 120) % 360} 40% 12%)`); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 60; i++) { const a = t / 900 + i; g.fillStyle = `hsla(${i * 6} 60% 60% / .55)`; g.beginPath(); g.arc(w * .55 + Math.cos(a * 1.3) * w * .35, h / 2 + Math.sin(a) * h * .4, 30 + 20 * Math.sin(a * 2), 0, 7); g.fill(); }
+  if (t - since >= 1000) { document.title = `in the page: ${Math.round(n * 1000 / (t - since))} frames/s, late ${late}, worst ${worst.toFixed(1)} ms`; n = 0; late = 0; worst = 0; since = t; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

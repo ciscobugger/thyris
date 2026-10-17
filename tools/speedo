@@ -1,0 +1,56 @@
+#!/bin/sh
+# tools/speedo opsis|cef|chrome [baseline|mem32|nosi|nocap]
+# Speedometer 3 once, offscreen/headless, throwaway profile. Same modes as tools/speedometer; cef is Opsis on CEF
+# (build-cef), in software as the other two (--ozone-platform=headless --disable-gpu); nocap drops Opsis's V8 starting
+# heap cap (--preconfigured-old-space-size, main.cpp) for one with the default. CEF_BUILD picks another CEF build folder
+# (build-cef-tuned: the tuned engine).
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+who=${1:-opsis}
+mode=${2:-baseline}
+data=$(mktemp -d)
+pid=
+cleanup() { if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi; rm -rf "$data"; }
+trap cleanup EXIT
+
+case "$who" in
+    opsis)
+        port=9313
+        case "$mode" in
+            mem32) OPSIS_V8_OLD_SPACE=32 ;;
+            nosi) OPSIS_SITE_ISOLATION=0 ;;
+            nocap) OPSIS_JS_FLAGS=--stack-size=984 ;;
+            baseline) ;;
+            *) echo "speedo: mode must be baseline|mem32|nosi|nocap" >&2; exit 2 ;;
+        esac
+        export OPSIS_V8_OLD_SPACE OPSIS_SITE_ISOLATION OPSIS_JS_FLAGS 2>/dev/null || true
+        QT_QPA_PLATFORM=offscreen XDG_DATA_HOME="$data" QTWEBENGINE_REMOTE_DEBUGGING=$port \
+            "$root/build/browser" about:blank >"$data/opsis.log" 2>&1 &
+        pid=$!
+        ;;
+    cef)
+        port=9315
+        # the last --js-flags wins: a default value in its place drops the cap
+        case "$mode" in
+            nocap) OPSIS_JS_FLAGS=--stack-size=984 ;;
+            baseline) ;;
+            *) echo "speedo: cef mode must be baseline|nocap" >&2; exit 2 ;;
+        esac
+        export OPSIS_JS_FLAGS 2>/dev/null || true
+        QT_QPA_PLATFORM=offscreen XDG_DATA_HOME="$data" XDG_CACHE_HOME="$data/cache" \
+            QTWEBENGINE_CHROMIUM_FLAGS="--remote-debugging-port=$port --remote-allow-origins=* --ozone-platform=headless --disable-gpu" \
+            "$root/${CEF_BUILD:-build-cef}/browser" about:blank >"$data/cef.log" 2>&1 &
+        pid=$!
+        ;;
+    chrome)
+        port=9314
+        google-chrome-stable --headless=new --disable-gpu --no-first-run --no-default-browser-check \
+            --remote-allow-origins='*' --user-data-dir="$data" --remote-debugging-port=$port about:blank \
+            >"$data/chrome.log" 2>&1 &
+        pid=$!
+        ;;
+    *) echo "speedo: first arg must be opsis, cef or chrome" >&2; exit 2 ;;
+esac
+
+echo "speedo: $who $mode, cdp=:$port"
+node "$root/tools/speedo.js" $port || { echo "--- $who log ---"; tail -20 "$data"/*.log; exit 1; }

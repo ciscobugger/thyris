@@ -1,0 +1,4 @@
+# build output: made from the sources by CMake and cargo
+/build/
+/build-*/
+/adblock/target/

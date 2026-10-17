@@ -1,0 +1,52 @@
+#!/bin/bash
+# The CEF page view on a test page, in a window nobody sees (book4-edge/opsis-cef-port-plan.md, slice 0):
+#   tools/cef-page [frames|still|<url>] [seconds]      (default: frames, 24 s)
+# Builds build-cef (-DBROWSER_ENGINE=cef; cefpage and browser-page only), starts a headless Weston that draws with the
+# graphics chip, a 1920x1080 screen at 60 Hz, and runs cefpage full screen on it. Prints cefpage's lines, the
+# processor time of all its processes over the run's second half, and whether the page processes are sandboxed;
+# CEFPAGE_SHOT=<file.png> saves the window. CEF_BUILD picks another CEF build folder (build-cef-tuned). OPSIS_CEF_FRAMES=cpu and QSG_RENDER_LOOP pass through.
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+page=${1:-frames}; seconds=${2:-24}
+case $page in frames|still|scroll) page=file://$root/tests/fixtures/cef/$page.html;; esac
+build=${CEF_BUILD:-build-cef}
+[ "$build" = build-cef ] && cmake -S "$root" -B "$root/build-cef" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBROWSER_ENGINE=cef >/dev/null
+if ! log=$(nice cmake --build "$root/$build" -j4 --target cefpage browser-page 2>&1); then
+    printf '%s\n' "$log" >&2
+    exit 1
+fi
+bin=$root/$build
+socket=opsis-cef-page-$$
+weston --backend=headless --renderer=gl --shell=kiosk --width=1920 --height=1080 --socket=$socket --no-config \
+    --idle-time=0 >/dev/null 2>&1 &
+weston=$!
+trap 'kill $weston 2>/dev/null' EXIT
+for _ in $(seq 50); do [ -S "$XDG_RUNTIME_DIR/$socket" ] && break; sleep 0.1; done
+
+# processor ticks of cefpage and its page processes so far
+ticks() {
+    local sum=0 exe stat
+    for p in /proc/[0-9]*; do
+        exe=$(readlink "$p/exe" 2>/dev/null) || continue
+        case $exe in "$bin/cefpage"|"$bin/browser-page") ;; *) continue;; esac
+        read -r -a stat < "$p/stat" 2>/dev/null || continue
+        sum=$((sum + stat[13] + stat[14]))
+    done
+    echo $sum
+}
+WAYLAND_DISPLAY=$socket QT_QPA_PLATFORM=wayland CEFPAGE_SECONDS=$seconds "$bin/cefpage" "$page" 2>&1 \
+    | grep -vE 'vaInitialize|gtk-hint-font-metrics|default value of option force_gl_vendor' &
+sleep $((seconds / 2))
+t0=$(ticks); s0=$(date +%s%N)
+printf 'page processes:'
+for p in /proc/[0-9]*; do
+    [ "$(readlink "$p/exe" 2>/dev/null)" = "$bin/browser-page" ] || continue
+    # Chromium rewrites a process's title: its arguments are one string there
+    type=$(tr '\0' ' ' < "$p/cmdline" | grep -oE -- '--(utility-sub-)?type=[A-Za-z.-]+' | sed 's/.*=//; s/\.mojom.*//' | tail -1)
+    printf ' %s:%s' "$type" "$(awk '/^Seccomp:/{print $2 == 2 ? "filtered" : "unfiltered"}' "$p/status")"
+done
+echo
+sleep $((seconds - seconds / 2 - 2))
+t1=$(ticks); s1=$(date +%s%N)
+wait %2 2>/dev/null || true
+awk -v t=$((t1 - t0)) -v ns=$((s1 - s0)) -v hz="$(getconf CLK_TCK)" 'BEGIN { printf "processor: %.2f cores busy\n", t / hz / (ns / 1e9) }'

@@ -1,0 +1,19 @@
+diff --git a/libcef/browser/osr/render_widget_host_view_osr.cc b/libcef/browser/osr/render_widget_host_view_osr.cc
+index 90b476532..baaecc0b4 100644
+--- a/libcef/browser/osr/render_widget_host_view_osr.cc
++++ b/libcef/browser/osr/render_widget_host_view_osr.cc
+@@ -1725,7 +1725,13 @@ void CefRenderWidgetHostViewOSR::SetFrameRate() {
+   }
+ 
+   if (video_consumer_) {
+-    video_consumer_->SetFrameRate(base::Microseconds(frame_rate_threshold_us_));
++    // Tacit (2026-10-07): the capture may take frames twice as often as the
++    // compositor makes them. At the same period it dropped every frame that
++    // came a hair early, so a page scrolled with gaps of 33-77 ms; a higher
++    // windowless_frame_rate stopped that but made the compositor draw twice
++    // as often, and the embedder's own begin frames upset video cadence.
++    video_consumer_->SetFrameRate(
++        base::Microseconds(frame_rate_threshold_us_ / 2));
+   }
+ }
+ 

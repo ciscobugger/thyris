@@ -1,0 +1,26 @@
+diff --git a/libcef/browser/osr/browser_platform_delegate_osr.cc b/libcef/browser/osr/browser_platform_delegate_osr.cc
+index 44e49530f..5b35fc78e 100644
+--- a/libcef/browser/osr/browser_platform_delegate_osr.cc
++++ b/libcef/browser/osr/browser_platform_delegate_osr.cc
+@@ -153,6 +153,21 @@ void CefBrowserPlatformDelegateOsr::SendMouseWheelEvent(
+ 
+   blink::WebMouseWheelEvent web_event =
+       native_delegate_->TranslateWebWheelEvent(event, deltaX, deltaY);
++  // Tacit (2026-10-07): the embedder's touchpad phases, in modifier bits CEF
++  // leaves unused (Opsis passes Qt's ScrollBegin, ScrollUpdate, ScrollEnd).
++  // With them Chromium keeps one scroll per gesture, as it does for Qt
++  // WebEngine; without, it guesses, and broke the scroll off at turns of the
++  // fingers (replayed: the page moved 70 % of the hand's scroll).
++  constexpr uint32_t kTacitPhaseBegan = 1u << 24;
++  constexpr uint32_t kTacitPhaseChanged = 1u << 25;
++  constexpr uint32_t kTacitPhaseEnded = 1u << 26;
++  if (event.modifiers & kTacitPhaseBegan) {
++    web_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
++  } else if (event.modifiers & kTacitPhaseChanged) {
++    web_event.phase = blink::WebMouseWheelEvent::kPhaseChanged;
++  } else if (event.modifiers & kTacitPhaseEnded) {
++    web_event.phase = blink::WebMouseWheelEvent::kPhaseEnded;
++  }
+   view->SendMouseWheelEvent(web_event);
+ }
+ 

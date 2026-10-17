@@ -1,0 +1,46 @@
+#!/bin/bash
+# The engine checks on a cloud machine instead of this one (they take half an hour and need no screen):
+#   tools/cloud-check [qt|cef|both] [group ...]      (default: both engines, every group)
+# The machine is named in ~/.config/opsis/cloud.env (CLOUD_VM, CLOUD_ZONE, CLOUD_PROJECT; GCLOUD if gcloud is not on the
+# PATH). It is started if it is stopped (it powers itself off after 15 idle minutes, tools/cloud/idle.sh), this tree is
+# sent, and tools/cloud/run.sh builds it there in an Arch container with this laptop's Qt (tools/cloud/setup.sh, once
+# per machine) and runs tools/check-engine on Qt WebEngine and the same checks on CEF. Prints each engine's totals and
+# failed checks; the whole logs come back as build-cloud/<engine>.log. BROWSER_CLOUD_NOWAIT=1 starts the run and leaves.
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+. ~/.config/opsis/cloud.env
+gcloud=${GCLOUD:-gcloud}
+at=(--zone "$CLOUD_ZONE" --project "$CLOUD_PROJECT")
+ssh() { "$gcloud" compute ssh "$CLOUD_VM" "${at[@]}" --command "$1" 2>&1 | grep -v 'Warning: Permanently' || true; }
+what=${1:-both}; shift || true
+
+if [ "$("$gcloud" compute instances describe "$CLOUD_VM" "${at[@]}" --format='value(status)')" != RUNNING ]; then
+    echo "starting $CLOUD_VM"
+    "$gcloud" compute instances start "$CLOUD_VM" "${at[@]}" >/dev/null 2>&1
+fi
+for _ in $(seq 30); do [ "$(ssh 'echo up')" = up ] && break; sleep 5; done
+if [ "$(ssh 'cat ~/opsis/logs/state 2>/dev/null')" != done ]; then
+    echo "a run is under way there: $(ssh 'cat ~/opsis/logs/state 2>/dev/null')" >&2
+    exit 1
+fi
+
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tar -C "$(dirname "$root")" --exclude="$(basename "$root")/build*" --exclude="$(basename "$root")/adblock/target" \
+    --transform "s|^$(basename "$root")|browser|" -czf "$tmp/opsis-src.tar.gz" "$(basename "$root")"
+"$gcloud" compute scp "$tmp/opsis-src.tar.gz" "$root/tools/cloud/run.sh" "$CLOUD_VM":~/ "${at[@]}" >/dev/null 2>&1
+ssh "mv ~/run.sh ~/opsis-run.sh; chmod +x ~/opsis-run.sh; echo 'running $what' > ~/opsis/logs/state; (nohup ~/opsis-run.sh $what $* > ~/opsis-run.out 2>&1 &); sleep 1"
+echo "running $what on $CLOUD_VM"
+[ -n "${BROWSER_CLOUD_NOWAIT:-}" ] && exit 0
+
+ssh 'until [ "$(cat ~/opsis/logs/state)" = done ]; do sleep 15; done'
+mkdir -p "$root/build-cloud"
+"$gcloud" compute scp "$CLOUD_VM":~/opsis/logs/'*.log' "$root/build-cloud/" "${at[@]}" >/dev/null 2>&1
+failed=0
+for engine in qt cef; do
+    log=$root/build-cloud/$engine.log
+    { [ "$what" = "$engine" ] || [ "$what" = both ]; } && [ -f "$log" ] || continue
+    echo "== $engine: $(grep -E '^== [0-9]+ checks' "$log" | tail -1 | sed 's/^== //')"
+    grep '^FAIL' "$log" | cut -c1-160 || true
+    grep -q '^== [0-9]* checks, 0 failed' "$log" || failed=1
+done
+exit $failed

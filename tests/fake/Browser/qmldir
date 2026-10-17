@@ -1,0 +1,4 @@
+module Browser
+singleton Store 1.0 Store.qml
+singleton SiteData 1.0 SiteData.qml
+singleton Facts 1.0 Facts.qml

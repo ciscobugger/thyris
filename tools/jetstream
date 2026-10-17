@@ -1,0 +1,33 @@
+#!/bin/sh
+# tools/jetstream opsis|chrome [baseline|mem32]
+# Runs JetStream 2 once in the named browser, offscreen/headless on a throwaway profile, and
+# prints the score. mem32 sets the V8 old-space cap that was default until 2026-10-05.
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+who=${1:-opsis}
+mode=${2:-baseline}
+data=$(mktemp -d)
+pid=
+cleanup() { if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi; rm -rf "$data"; }
+trap cleanup EXIT
+
+case "$who" in
+    opsis)
+        port=9311
+        [ "$mode" = mem32 ] && export OPSIS_V8_OLD_SPACE=32
+        QT_QPA_PLATFORM=offscreen XDG_DATA_HOME="$data" QTWEBENGINE_REMOTE_DEBUGGING=$port \
+            "$root/build/browser" about:blank >"$data/opsis.log" 2>&1 &
+        pid=$!
+        ;;
+    chrome)
+        port=9312
+        google-chrome-stable --headless=new --disable-gpu --no-first-run --no-default-browser-check \
+            --remote-allow-origins='*' --user-data-dir="$data" --remote-debugging-port=$port about:blank \
+            >"$data/chrome.log" 2>&1 &
+        pid=$!
+        ;;
+    *) echo "jetstream: first arg must be opsis or chrome" >&2; exit 2 ;;
+esac
+
+echo "jetstream: $who $mode, cdp=:$port"
+node "$root/tools/jetstream.js" $port || { echo "--- $who log ---"; tail -20 "$data"/*.log; exit 1; }

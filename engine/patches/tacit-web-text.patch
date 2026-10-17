@@ -1,0 +1,49 @@
+--- a/third_party/skia/src/core/SkScalerContext.cpp	2026-10-02 04:30:56.964095669 +0200
++++ b/third_party/skia/src/core/SkScalerContext.cpp	2026-10-02 04:30:56.978648316 +0200
+@@ -7,6 +7,9 @@
+ 
+ #include "src/core/SkScalerContext.h"
+ 
++#include <cstdlib>
++#include <cstring>
++
+ #include "include/core/SkColorType.h"
+ #include "include/core/SkDrawable.h"
+ #include "include/core/SkFont.h"
+@@ -162,6 +165,23 @@
+ /**
+  * Expands fDeviceGamma, fContrast, and fLumBits into a mask pre-blend.
+  */
++// Tacit (2026-10-02): TACIT_TEXT_GAMMA and TACIT_TEXT_CONTRAST in the environment replace the text gamma and
++// contrast every glyph mask is blended with. Linux Chromium builds them in as 1.2 and 0.2, which draw light text on a
++// dark page thin and soft beside text blended for the screen; read once per process, so the values can be tuned at
++// start without a rebuild. Unset, empty or out of range: the surface's own value. Gamma 0 is the sRGB curve.
++static SkScalar TacitTextValue(const char* name, SkScalar fallback, SkScalar lo, SkScalar hi, bool hiInclusive) {
++    static const char* const kNames[2] = {"TACIT_TEXT_GAMMA", "TACIT_TEXT_CONTRAST"};
++    static const float kRead[2] = {
++        [] { const char* v = getenv(kNames[0]); return v && *v ? strtof(v, nullptr) : -1.f; }(),
++        [] { const char* v = getenv(kNames[1]); return v && *v ? strtof(v, nullptr) : -1.f; }(),
++    };
++    const float v = kRead[strcmp(name, kNames[0]) == 0 ? 0 : 1];
++    if (!(v >= lo) || (hiInclusive ? v > hi : v >= hi)) {
++        return fallback;
++    }
++    return v;
++}
++
+ SkMaskGamma::PreBlend SkScalerContext::GetMaskPreBlend(const SkScalerContextRec& rec) {
+     SkAutoMutexExclusive ama(mask_gamma_cache_mutex());
+ 
+@@ -1205,8 +1225,10 @@
+     // The math in SkMaskGamma can handle them being different,
+     // but it requires superluminous masks when
+     // Ex : deviceGamma(x) < paintGamma(x) and x is sufficiently large.
+-    rec->setDeviceGamma(surfaceProps.textGamma());
+-    rec->setContrast(surfaceProps.textContrast());
++    rec->setDeviceGamma(TacitTextValue("TACIT_TEXT_GAMMA", surfaceProps.textGamma(),
++                                       SkSurfaceProps::kMinGammaInclusive, SkSurfaceProps::kMaxGammaExclusive, false));
++    rec->setContrast(TacitTextValue("TACIT_TEXT_CONTRAST", surfaceProps.textContrast(),
++                                    SkSurfaceProps::kMinContrastInclusive, SkSurfaceProps::kMaxContrastInclusive, true));
+ 
+     if (!SkToBool(scalerContextFlags & SkScalerContextFlags::kFakeGamma)) {
+         rec->ignoreGamma();

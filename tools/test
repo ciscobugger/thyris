@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs the QML logic tests (tests/tst_*.qml) offscreen. tests/fake stands in for the C++ side of the
+# Browser module (Store), so no build is needed. Extra arguments go to qmltestrunner (e.g. -functions).
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+runner=$(command -v qmltestrunner || echo /usr/lib/qt6/bin/qmltestrunner)
+cd "$root"
+QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 exec "$runner" -input tests -import tests/fake "$@"

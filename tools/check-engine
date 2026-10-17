@@ -1,0 +1,26 @@
+#!/bin/bash
+# Checks what needs the real engine, the key classes (PLAN.md 5) and the lifecycle:
+#   tools/check-engine [group ...]     (no group: all of them; the groups are in qml/EngineCheck.qml)
+# Builds build-dev first if needed (-j2, nice; BROWSER_BUILD=build for the release build). Runs offscreen on
+# a throwaway data dir; prints one line per check and exits non-zero if any failed.
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+# build-dev keeps the QML as source (BROWSER_DEV in CMakeLists.txt), so a QML edit rebuilds in about a second
+dir=${BROWSER_BUILD:-build-dev}
+dev=OFF; [ "$dir" = build-dev ] && dev=ON
+cmake -S "$root" -B "$root/$dir" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBROWSER_DEV=$dev >/dev/null
+if ! log=$(nice cmake --build "$root/$dir" -j2 2>&1); then
+    printf '%s\n' "$log" >&2
+    exit 1
+fi
+set -o pipefail
+# Chromium's own screen: a private X server (a headless Weston's Xwayland, nobody's desktop). On its headless platform
+# Chromium denies every permission prompt before the browser hears of it (PermissionRequestManager::AddRequest), so the
+# notification and location asks could not be checked (2026-10-15). The browser takes it as CHECK_X_DISPLAY.
+xlog=$(mktemp); sock=check-$$
+weston --backend=headless --xwayland --shell=kiosk --socket=$sock --no-config --idle-time=0 >"$xlog" 2>&1 & weston=$!
+trap 'kill $weston 2>/dev/null; rm -f "$xlog"' EXIT
+for i in $(seq 50); do x=$(grep -o 'xserver listening on display :[0-9]*' "$xlog" | grep -o ':[0-9]*$' || true); [ -n "$x" ] && break; sleep 0.1; done
+[ -n "$x" ] || { echo "check-engine: the private X server did not start" >&2; exit 1; }
+CHECK_X_DISPLAY=$x QT_FORCE_STDERR_LOGGING=1 timeout 1800 "$root/$dir/browser" --check-engine "$@" 2>&1 \
+    | { grep -vE 'default value of option force_gl_vendor|Vulkan|GPU vendor|GPUInfo|Icon theme|no filter lists' || true; }

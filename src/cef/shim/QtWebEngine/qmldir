@@ -1,0 +1,17 @@
+module QtWebEngine
+WebEngineView 1.0 WebEngineView.qml
+singleton WebEngine 1.0 WebEngine.qml
+WebEngineSettings 1.0 WebEngineSettings.qml
+WebEngineProfile 1.0 WebEngineProfile.qml
+WebEngineProfilePrototype 1.0 WebEngineProfilePrototype.qml
+WebEngineScript 1.0 WebEngineScript.qml
+WebEngineNewWindowRequest 1.0 WebEngineNewWindowRequest.qml
+WebEngineNavigationRequest 1.0 WebEngineNavigationRequest.qml
+WebEnginePermission 1.0 WebEnginePermission.qml
+WebEngineDownloadRequest 1.0 WebEngineDownloadRequest.qml
+WebEngineWebAuthUxRequest 1.0 WebEngineWebAuthUxRequest.qml
+WebEngineCertificateError 1.0 WebEngineCertificateError.qml
+WebEngineClientCertificateSelection 1.0 WebEngineClientCertificateSelection.qml
+AuthenticationDialogRequest 1.0 AuthenticationDialogRequest.qml
+FileDialogRequest 1.0 FileDialogRequest.qml
+JavaScriptDialogRequest 1.0 JavaScriptDialogRequest.qml

@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>scroll</title>
+<!-- tools/cef-page scroll (CEFPAGE_SCROLL, CEFPAGE_REPLAY): a long page, opened in its middle, that measures how it follows
+     the scroll it is given. Every second the title reports: frames that moved, the mean step and its spread (standard
+     deviation), frames that did not move between two that did (stalls), steps over 1.5x the mean (jumps), and how long the
+     page took to turn when the input turned (from the first step the other way to the first frame that moved that way:
+     mean and worst). At the end of a run the totals ("all:"). -->
+<style>body{margin:0;font:16px/1.5 sans-serif;background:#fff;color:#222}
+p{margin:0;padding:6px 40px;border-bottom:1px solid #eee}</style>
+<script>
+let last = null, steps = [], stalls = 0, pendingStill = 0;
+let inputDir = 0, turnAt = 0, turns = [], allTurns = [], allStalls = 0, allMoved = 0, inputSum = 0, pageSum = 0;
+addEventListener("wheel", e => {
+  inputSum += Math.abs(e.deltaY);
+  const dir = Math.sign(e.deltaY);
+  if (dir && dir !== inputDir) { if (inputDir) turnAt = e.timeStamp; inputDir = dir; }
+}, { passive: true });
+function frame(t) {
+  const y = scrollY;
+  if (last !== null) {
+    const d = y - last;
+    pageSum += Math.abs(d);
+    if (d !== 0) {
+      if (pendingStill && steps.length) stalls += pendingStill;
+      pendingStill = 0; steps.push(Math.abs(d));
+      if (turnAt && Math.sign(d) === inputDir) { turns.push(t - turnAt); turnAt = 0; }
+    } else if (steps.length) pendingStill++;
+  }
+  last = y;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+const fmt = (a) => a.length ? `${(a.reduce((x, y) => x + y, 0) / a.length).toFixed(0)}/${Math.max(...a).toFixed(0)} ms` : "-";
+setInterval(() => {
+  if (steps.length < 5) {
+    document.title = allMoved ? `all: ${allMoved} moved, stalls ${allStalls}, turns ${allTurns.length} took ${fmt(allTurns)}, page moved ${(100 * pageSum / Math.max(1, inputSum)).toFixed(0)} % of the input` : "scroll: idle";
+    steps = []; stalls = 0; pendingStill = 0; return;
+  }
+  const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
+  const sd = Math.sqrt(steps.reduce((a, b) => a + (b - mean) ** 2, 0) / steps.length);
+  const jumps = steps.filter(d => d > 1.5 * mean).length;
+  allMoved += steps.length; allStalls += stalls; allTurns.push(...turns);
+  document.title = `scroll: ${steps.length} moved, step ${mean.toFixed(1)} px, spread ${sd.toFixed(1)}, stalls ${stalls}, jumps ${jumps}, turns ${turns.length} took ${fmt(turns)}`;
+  steps = []; stalls = 0; pendingStill = 0; turns = [];
+}, 1000);
+addEventListener("DOMContentLoaded", () => {
+  let html = "";
+  for (let i = 0; i < 8000; i++) html += `<p>Line ${i}: Writing a value runs an action; reading returns the last value written.</p>`;
+  document.body.innerHTML = html;
+  scrollTo(0, document.documentElement.scrollHeight / 2);
+});
+</script>
+<body></body>

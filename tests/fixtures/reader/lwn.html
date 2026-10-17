@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<!-- An article page in LWN.net's markup (menu, top navigation, headline, ArticleText with its byline and a
+     subscriber note, comments, sidebar), with text written for the checks. Its style and script are what the reader
+     checks look for: the page's own colours, a handler and a javascript: link in the article, and a banner the page
+     appends later. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lane configuration for camera PHYs [LWN.net]</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta property="og:title" content="Lane configuration for camera PHYs">
+<meta property="og:site_name" content="LWN.net">
+<meta property="og:type" content="article">
+<style>
+body { background: #fffff0; color: #222222; font-family: Georgia, serif; margin: 0 }
+#menu { position: absolute; left: 0; top: 0; width: 9em }
+.navmenu { list-style: none; padding: 0 }
+.maincolumn { margin-left: 10.5em }
+.sidebar { float: right; width: 14em }
+.FeatureByline { font-style: italic }
+</style>
+</head>
+<body>
+<a name="t"></a>
+<div id="menu">
+<a href="/"><img src="/images/logo/barepenguin-70.png" width="60" height="70" alt="LWN.net Logo"></a>
+<div class="navmenu-container">
+<ul class="navmenu">
+<li><a class="navmenu" href="/current/"><b>Weekly edition</b></a></li>
+<li><a class="navmenu" href="/Archives/"><b>Archives</b></a></li>
+<li><a class="navmenu" href="/Search/"><b>Search</b></a></li>
+<li><a class="navmenu" href="/Kernel/"><b>Kernel</b></a></li>
+<li><a class="navmenu" href="/Security/"><b>Security</b></a></li>
+<li><a class="navmenu" href="/Calendar/"><b>Events calendar</b></a></li>
+<li><a class="navmenu" href="/Comments/unread"><b>Unread comments</b></a></li>
+</ul>
+</div>
+</div>
+<div class="topnav-container">
+<form action="/Login/" method="post" name="loginform" class="loginform">
+<label>User: <input type="text" name="uname" size="8"></label>
+<label>Password: <input type="password" name="pword" size="8"></label>
+<input type="submit" name="submit" value="Log in"> | <a href="/Login/newaccount">Subscribe</a> | <a href="/Login/register">Register</a>
+</form>
+</div>
+<div class="maincolumn flexcol">
+<div class="sidebar">
+<div class="SideBox"><p class="Header">Recent Features</p>
+<p><a href="/Articles/990001/">Scheduler tweaks for 7.3</a></p>
+<p><a href="/Articles/990002/">A look at the new mount API users</a></p>
+<p><a href="/Articles/990003/">Rust in the media subsystem</a></p>
+</div>
+</div>
+<div class="middlecolumn">
+<div class="PageHeadline">
+<h1>Lane configuration for camera PHYs</h1>
+</div>
+<div class="ArticleText">
+<blockquote class="ad"><b>Ready to give LWN a try?</b> With a subscription to LWN, you can stay current with what is
+happening in the Linux and free-software community and take advantage of subscriber-only site features.</blockquote>
+<div class="FeatureByline">By <b>Martin Lindqvist</b><br>September 24, 2026</div>
+<p>Camera sensors on laptops rarely talk to the system on chip directly. Between them sits a physical-layer block,
+the CSI PHY, that turns the sensor's serial lanes into something the image front end can consume. How many of those
+lanes carry data, and in what order, is a property of the board rather than of the sensor or the chip, and that is
+exactly the kind of fact the kernel expects to find in the device tree.</p>
+<p>A patch series posted in September for the camss driver fixes a case where that fact was read and then ignored.
+On the x1p42100, the driver set up the PHY for four lanes regardless of what the endpoint said, so a two-lane
+sensor probed without complaint and then produced nothing but black frames. Nothing in the logs pointed at the
+PHY; the sensor's own registers looked right and the pipeline reported frames arriving on time.</p>
+<img src="/images/2026/camss-lanes.png" width="600" height="300" alt="The camss pipeline from sensor to video node">
+<p>The fix itself is small. Rather than a table of lane masks per chip, the driver now reads the
+<code>data-lanes</code> property from the endpoint and programs only those lanes, in the order given. The larger
+change is in how the series tests it: each supported chip gets a check that the lane mask the driver computes
+matches what the device tree describes, so the next chip added cannot <span onmouseover="window.hacked = 'handler'">quietly repeat the mistake</span>.</p>
+<h2>Why it took so long to find</h2>
+<p>Several developers had seen the black frames and blamed the sensor driver, the image signal processor, or the
+software ISP in libcamera. Each of those layers had its own plausible bug, and each was fixed in turn without the
+frames changing. It was only when someone compared the PHY registers against a vendor kernel that the lane count
+stood out. <a href="javascript:window.hacked = 'link'">The comparison script</a> is now part of the series.</p>
+<pre>
+csiphy0: lanes 0x1f (4 data + clock), endpoint says &lt;1 2&gt;
+csiphy0: lanes 0x07 (2 data + clock) after the fix
+</pre>
+<p>The series is expected to land in the media tree for the next merge window. Distributors carrying the earlier
+workaround, which forced the sensor into four-lane mode, will want to drop it at the same time, since the two
+together leave the PHY and the sensor disagreeing again in the other direction.</p>
+<p><a href="/Articles/991234/#Comments">Comments (12 posted)</a></p>
+</div>
+<a name="Comments"></a>
+<details class="CommentBox" open>
+<summary><h3 class="CommentTitle">Four lanes by default</h3>
+<div class="AnnoLine">Posted Sep 24, 2026 14:02 UTC by <b>anon</b></div></summary>
+<div class="FormattedComment">Every one of these bugs is a default somebody picked because the first board they had used it.</div>
+</details>
+<details class="CommentBox" open>
+<summary><h3 class="CommentTitle">Vendor kernels</h3>
+<div class="AnnoLine">Posted Sep 24, 2026 15:40 UTC by <b>reader</b></div></summary>
+<div class="FormattedComment">Comparing against the vendor kernel remains the fastest way to find these.</div>
+</details>
+</div>
+</div>
+<script>
+window.addBanner = () => { const d = document.createElement('div'); d.id = 'late-banner'; d.textContent = 'Subscribe now'; document.body.appendChild(d) };
+</script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+diff --git a/src/core/SkScalerContext.cpp b/src/core/SkScalerContext.cpp
+index d653f8a..9f5c982 100644
+--- a/src/core/SkScalerContext.cpp
++++ b/src/core/SkScalerContext.cpp
+@@ -7,6 +7,10 @@
+ 
+ #include "src/core/SkScalerContext.h"
+ 
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++
+ #include "include/core/SkColorType.h"
+ #include "include/core/SkDrawable.h"
+ #include "include/core/SkFont.h"
+@@ -163,6 +167,33 @@ const SkMaskGamma& SkScalerContextRec::CachedMaskGamma(uint8_t contrast, uint8_t
+ /**
+  * Expands fDeviceGamma, fContrast, and fLumBits into a mask pre-blend.
+  */
++// Tacit (2026-10-02): TACIT_TEXT_GAMMA and TACIT_TEXT_CONTRAST in the environment replace the text gamma and
++// contrast every glyph mask is blended with. Linux Chromium builds them in as 1.2 and 0.2, which draw light text on a
++// dark page thin and soft beside text blended for the screen; read once per process, so the values can be tuned at
++// start without a rebuild. Unset, empty or out of range: the surface's own value. Gamma 0 is the sRGB curve.
++static SkScalar TacitTextValue(const char* name, SkScalar fallback, SkScalar lo, SkScalar hi, bool hiInclusive) {
++    static const char* const kNames[2] = {"TACIT_TEXT_GAMMA", "TACIT_TEXT_CONTRAST"};
++    static const float kRead[2] = {
++        [] { const char* v = getenv(kNames[0]); return v && *v ? strtof(v, nullptr) : -1.f; }(),
++        [] { const char* v = getenv(kNames[1]); return v && *v ? strtof(v, nullptr) : -1.f; }(),
++    };
++    const float v = kRead[strcmp(name, kNames[0]) == 0 ? 0 : 1];
++    if (!(v >= lo) || (hiInclusive ? v > hi : v >= hi)) {
++        return fallback;
++    }
++    return v;
++}
++
++// TACIT_TEXT_GAMMA set (the patched blend is on); TACIT_TEXT_DEBUG set: one line on stderr per process
++static bool TacitTextOn() {
++    static const bool on = [] { const char* v = getenv("TACIT_TEXT_GAMMA"); return v != nullptr && *v != '\0'; }();
++    return on;
++}
++static bool TacitTextDebug() {
++    static const bool on = [] { const char* v = getenv("TACIT_TEXT_DEBUG"); return v != nullptr && *v != '\0'; }();
++    return on;
++}
++
+ SkMaskGamma::PreBlend SkScalerContext::GetMaskPreBlend(const SkScalerContextRec& rec) {
+     SkAutoMutexExclusive ama(mask_gamma_cache_mutex());
+ 
+@@ -1208,13 +1239,24 @@ void SkScalerContext::MakeRecAndEffects(const SkFont& font, const SkPaint& paint
+     // The math in SkMaskGamma can handle them being different,
+     // but it requires superluminous masks when
+     // Ex : deviceGamma(x) < paintGamma(x) and x is sufficiently large.
+-    rec->setDeviceGamma(surfaceProps.textGamma());
+-    rec->setContrast(surfaceProps.textContrast());
+-
+-    if (!SkToBool(scalerContextFlags & SkScalerContextFlags::kFakeGamma)) {
++    rec->setDeviceGamma(TacitTextValue("TACIT_TEXT_GAMMA", surfaceProps.textGamma(),
++                                       SkSurfaceProps::kMinGammaInclusive, SkSurfaceProps::kMaxGammaExclusive, false));
++    rec->setContrast(TacitTextValue("TACIT_TEXT_CONTRAST", surfaceProps.textContrast(),
++                                    SkSurfaceProps::kMinContrastInclusive, SkSurfaceProps::kMaxContrastInclusive, true));
++
++    // Tacit: with TACIT_TEXT_GAMMA set the blend stays whatever flags Chromium draws with; without kFakeGamma it reset the
++    // gamma and dropped the text's luminance, so the set values never reached a glyph (2026-10-07)
++    if (TacitTextDebug()) {
++        static bool told = false;
++        if (!told) {
++            told = true;
++            fprintf(stderr, "tacit text: flags %d luminance %08x\n", (int)scalerContextFlags, rec->getLuminanceColor());
++        }
++    }
++    if (!SkToBool(scalerContextFlags & SkScalerContextFlags::kFakeGamma) && !TacitTextOn()) {
+         rec->ignoreGamma();
+     }
+-    if (!SkToBool(scalerContextFlags & SkScalerContextFlags::kBoostContrast)) {
++    if (!SkToBool(scalerContextFlags & SkScalerContextFlags::kBoostContrast) && !TacitTextOn()) {
+         rec->setContrast(0);
+     }
+ 
+diff --git a/src/ports/SkFontHost_FreeType.cpp b/src/ports/SkFontHost_FreeType.cpp
+index f8043f2..6a6bb5c 100644
+--- a/src/ports/SkFontHost_FreeType.cpp
++++ b/src/ports/SkFontHost_FreeType.cpp
+@@ -36,6 +36,16 @@
+ #include "src/core/SkScalerContext.h"
+ #include "src/core/SkTSearch.h"
+ #include "src/ports/SkFontHost_FreeType_common.h"
++#include <cstdlib>
++
++// Tacit (2026-10-07): Chromium's Linux build leaves SK_GAMMA_APPLY_TO_A8 undefined, so grey (A8) glyph masks were never
++// blended with the text gamma and contrast at all, only LCD ones. With TACIT_TEXT_GAMMA set (the session's or Opsis's),
++// grey masks take the same pre-blend as the patched SkScalerContext gives them; unset, Skia as it was.
++static bool SkTacitTextApplyToA8() {
++    static const bool on = [] { const char* v = getenv("TACIT_TEXT_GAMMA"); return v != nullptr && *v != '\0'; }();
++    return on;
++}
++
+ #include "src/ports/SkFontScanner_FreeType_priv.h"
+ #include "src/ports/SkTypeface_FreeType.h"
+ #include "src/sfnt/SkOTUtils.h"
+@@ -844,7 +854,7 @@ void SkTypeface_FreeType::onFilterRec(SkScalerContextRec* rec) const {
+     rec->setHinting(h);
+ 
+ #ifndef SK_GAMMA_APPLY_TO_A8
+-    if (!isLCD(*rec)) {
++    if (!isLCD(*rec) && !SkTacitTextApplyToA8()) {
+         // SRGBTODO: Is this correct? Do we want contrast boost?
+         rec->ignorePreBlend();
+     }
+diff --git a/src/ports/SkFontHost_FreeType_common.cpp b/src/ports/SkFontHost_FreeType_common.cpp
+index 865d761..ca4e5eb 100644
+--- a/src/ports/SkFontHost_FreeType_common.cpp
++++ b/src/ports/SkFontHost_FreeType_common.cpp
+@@ -7,6 +7,16 @@
+  */
+ 
+ #include "src/ports/SkFontHost_FreeType_common.h"
++#include <cstdlib>
++
++// Tacit (2026-10-07): Chromium's Linux build leaves SK_GAMMA_APPLY_TO_A8 undefined, so grey (A8) glyph masks were never
++// blended with the text gamma and contrast at all, only LCD ones. With TACIT_TEXT_GAMMA set (the session's or Opsis's),
++// grey masks take the same pre-blend as the patched SkScalerContext gives them; unset, Skia as it was.
++static bool SkTacitTextApplyToA8() {
++    static const bool on = [] { const char* v = getenv("TACIT_TEXT_GAMMA"); return v != nullptr && *v != '\0'; }();
++    return on;
++}
++
+ 
+ #include "include/core/SkBitmap.h"
+ #include "include/core/SkCanvas.h"
+@@ -1883,7 +1893,11 @@ void SkScalerContextFTUtils::generateGlyphImage(FT_Face face, const SkGlyph& gly
+ // We used to always do this pre-USE_COLOR_LUMINANCE, but with colorlum,
+ // it is optional
+ #if defined(SK_GAMMA_APPLY_TO_A8)
+-    if (SkMask::kA8_Format == glyph.maskFormat() && preBlend.isApplicable()) {
++    const bool applyToA8 = true;
++#else
++    const bool applyToA8 = SkTacitTextApplyToA8();
++#endif
++    if (applyToA8 && SkMask::kA8_Format == glyph.maskFormat() && preBlend.isApplicable()) {
+         uint8_t* SK_RESTRICT dst = (uint8_t*)imageBuffer;
+         unsigned rowBytes = glyph.rowBytes();
+ 
+@@ -1894,7 +1908,6 @@ void SkScalerContextFTUtils::generateGlyphImage(FT_Face face, const SkGlyph& gly
+             dst += rowBytes;
+         }
+     }
+-#endif
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////////

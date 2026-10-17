@@ -1,0 +1,38 @@
+#!/bin/sh
+# Speedometer against build/browser with one tuning profile, so the flags in main.cpp's
+# engine block can be A/B'd on the device rather than guessed at.
+#
+# Quit the browser before each run: tunables are read once, at process start, and a second
+# launch is handed off to the running instance, which reads none of them.
+#
+#   tools/speedometer                 baseline: site isolation on, V8 cap off, GPU default
+#   tools/speedometer mem32            the Oct 3 memory behaviour (expect ~17)
+#   tools/speedometer mem128           middle ground
+#   tools/speedometer nosi             site isolation off, to measure what it costs
+#   tools/speedometer gpu              only if chrome://gpu shows software raster
+#   tools/speedometer threaded         vs the default basic render loop
+#   tools/speedometer baseline <url>   any page instead of Speedometer
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+mode=${1:-baseline}
+url=${2:-https://browserbench.org/Speedometer3.0/}
+
+OPSIS_V8_OLD_SPACE=
+OPSIS_SITE_ISOLATION=
+OPSIS_GPU_FLAGS=
+case "$mode" in
+    baseline) ;;
+    mem32)    OPSIS_V8_OLD_SPACE=32 ;;
+    mem128)   OPSIS_V8_OLD_SPACE=128 ;;
+    nosi)     OPSIS_SITE_ISOLATION=0 ;;
+    gpu)      OPSIS_GPU_FLAGS=1 ;;
+    threaded) QSG_RENDER_LOOP=threaded ;;
+    *) echo "speedometer: unknown mode '$mode' (baseline|mem32|mem128|nosi|gpu|threaded)" >&2; exit 2 ;;
+esac
+export OPSIS_V8_OLD_SPACE OPSIS_SITE_ISOLATION OPSIS_GPU_FLAGS
+if [ -n "${QSG_RENDER_LOOP:-}" ]; then export QSG_RENDER_LOOP; fi
+
+echo "speedometer: mode=$mode"
+echo "quit the browser first, or this run is handed off and reads no flags"
+echo "opening $url"
+exec "$root/build/browser" "$url"

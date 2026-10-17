@@ -1,0 +1,33 @@
+#!/bin/sh
+# Downloads uBlock Origin Lite from Google's extension update service and unpacks it where Opsis on CEF loads it at start
+# (src/main.cpp): $XDG_DATA_HOME/browser/extensions/ubol, by default the CEF build's own data (~/.local/share/opsis-cef).
+# While it is there Chromium blocks with uBOL's rules and Opsis's own blocker stands aside (Adblock::extensionBlocks).
+# The folder keeps its path across updates: Chromium names an unpacked extension by its path, and uBOL keeps its settings
+# under that name. A running Opsis takes the new version at its next start.
+set -eu
+data=${XDG_DATA_HOME:-$HOME/.local/share/opsis-cef}
+out=$data/browser/extensions/ubol
+id=ddkjiahejlhfcafbddmgiahcphecmpfh
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL -o "$tmp/ubol.crx" \
+    "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=154.0&acceptformat=crx3&x=id%3D$id%26uc"
+# CRX3: "Cr24", version 3, a signed header, then the zip
+python3 -I - "$tmp/ubol.crx" "$tmp/new" <<'PY'
+import io, json, struct, sys, zipfile
+data = open(sys.argv[1], "rb").read()
+if data[:4] != b"Cr24" or struct.unpack("<I", data[4:8])[0] != 3:
+    sys.exit("update-ubol: not a CRX3 file")
+header = struct.unpack("<I", data[8:12])[0]
+zipfile.ZipFile(io.BytesIO(data[12 + header:])).extractall(sys.argv[2])
+manifest = json.load(open(sys.argv[2] + "/manifest.json"))
+if manifest.get("manifest_version") != 3 or "declarativeNetRequest" not in manifest.get("permissions", []):
+    sys.exit("update-ubol: the download is not uBlock Origin Lite")
+PY
+version=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$tmp/new/manifest.json")
+mkdir -p "$(dirname "$out")"
+rm -rf "$out.old"
+[ -d "$out" ] && mv "$out" "$out.old"
+mv "$tmp/new" "$out"
+rm -rf "$out.old"
+echo "uBlock Origin Lite $version in $out"

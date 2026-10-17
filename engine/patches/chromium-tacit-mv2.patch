@@ -1,0 +1,15 @@
+diff -ru a/extensions/browser/manifest_v2_handler.cc b/extensions/browser/manifest_v2_handler.cc
+--- a/extensions/browser/manifest_v2_handler.cc
++++ b/extensions/browser/manifest_v2_handler.cc
+@@ -114,7 +114,10 @@
+     return false;
+   }
+ 
+-  return true;
++  // Tacit (2026-10-08): Opsis keeps Manifest V2 extensions (uBlock Origin);
++  // their blocking webRequest, background pages and browserAction are still
++  // in this branch (8037).
++  return false;
+ }
+ 
+ }  // namespace

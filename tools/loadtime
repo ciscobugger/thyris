@@ -1,0 +1,34 @@
+#!/bin/sh
+# tools/loadtime opsis|chrome [url] [runs]
+# Measures Navigation Timing for a URL in Opsis and in Chrome over the DevTools Protocol, on
+# a throwaway profile with the cache off, so the two are the same measurement. Opsis runs
+# offscreen (no window on the desktop); Chrome runs headless.
+set -eu
+root=$(dirname "$(dirname "$(readlink -f "$0")")")
+who=${1:-opsis}
+url=${2:-https://www.youtube.com/}
+runs=${3:-3}
+data=$(mktemp -d)
+pid=
+cleanup() { if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi; rm -rf "$data"; }
+trap cleanup EXIT
+
+case "$who" in
+    opsis)
+        port=9301
+        QT_QPA_PLATFORM=offscreen XDG_DATA_HOME="$data" QTWEBENGINE_REMOTE_DEBUGGING=$port \
+            "$root/build/browser" about:blank >"$data/opsis.log" 2>&1 &
+        pid=$!
+        ;;
+    chrome)
+        port=9302
+        google-chrome-stable --headless=new --disable-gpu --no-first-run --no-default-browser-check \
+            --remote-allow-origins='*' --user-data-dir="$data" --remote-debugging-port=$port about:blank \
+            >"$data/chrome.log" 2>&1 &
+        pid=$!
+        ;;
+    *) echo "loadtime: first arg must be opsis or chrome" >&2; exit 2 ;;
+esac
+
+echo "loadtime: $who, url=$url, runs=$runs, cdp=:$port"
+node "$root/tools/loadtime.js" $port "$url" "$runs" || { echo "--- $who log ---"; tail -20 "$data"/*.log; exit 1; }
