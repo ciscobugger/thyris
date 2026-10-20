@@ -46,7 +46,7 @@ public:
     Q_INVOKABLE void pointer(qreal x, qreal y, int buttons = 0, int modifiers = 0);
     // a touchpad's two-finger scroll at (x, y): Begin, `steps` Updates of dy/steps px `stepMs` apart (by the events'
     // timestamps), End, as Hyprland sends it (no momentum phase)
-    Q_INVOKABLE void swipe(qreal x, qreal y, int dy, int steps, int stepMs);
+    Q_INVOKABLE void swipe(qreal x, qreal y, int dy, int steps, int stepMs, int dx = 0);
     // The mouse leaves the window.
     Q_INVOKABLE void leave();
     // The file at `path` dragged in from another app and dropped at `x`, `y`.

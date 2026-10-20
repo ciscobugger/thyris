@@ -18,6 +18,7 @@ import "PageMenu.js" as PageMenu
 import "Recall.js" as Recall
 import "Settings.js" as Settings
 import "Site.js" as Site
+import "Swipe.js" as Swipe
 
 Window {
     id: root
@@ -589,6 +590,54 @@ Window {
         Cap { x: parent.width - width; rotation: 90 }
         Cap { x: parent.width - width; y: parent.height - height; rotation: 180 }
         Cap { y: parent.height - height; rotation: 270 }
+
+        // Back and forward by a sideways swipe on the touchpad (BrowserView.swipeX): an arrow comes in from the edge the
+        // swipe goes toward, filled with sand once it has gone far enough; lifting the fingers then goes back or forward.
+        // Back on a page with no earlier history returns to its opener, as the Back button does (back()).
+        Item {
+            id: swipeCue
+            z: 13
+            anchors.fill: parent
+            readonly property var v: root.noPage || root.ownKind !== "" ? null : root.currentView
+            readonly property real dx: v ? v.swipeX ?? 0 : 0
+            readonly property bool toBack: dx < 0
+            readonly property bool can: !!v && dx !== 0 && (toBack ? v.canGoBack || !!v.failure || sessionModel.backTo(v.pageId) !== "" : v.canGoForward)
+            readonly property real far: 140
+            readonly property real reach: can ? Math.min(1, Math.abs(dx) / far) : 0
+            // follows the fingers; slides out once they lift
+            property real shown: reach
+            Behavior on shown { enabled: !swipeCue.v || !swipeCue.v.swipeFingers; Anim { type: Anim.StandardSmall } }
+            property bool side: toBack
+            onDxChanged: if (dx !== 0) side = toBack
+            visible: shown > 0
+            Rectangle {
+                width: 44
+                height: 44
+                radius: 22
+                y: Math.round((parent.height - height) / 2)
+                x: swipeCue.side ? -width + swipeCue.shown * (width + 16) : parent.width - swipeCue.shown * (width + 16)
+                color: swipeCue.reach >= 1 ? Theme.primary : Theme.raisedHot
+                Behavior on color { CAnim {} }
+                Symbol {
+                    anchors.centerIn: parent
+                    text: swipeCue.side ? "arrow_back" : "arrow_forward"
+                    iconSize: 20
+                    color: swipeCue.reach >= 1 ? Theme.terminal : Theme.inkMain
+                }
+            }
+            Connections {
+                target: swipeCue.v
+                ignoreUnknownSignals: true
+                function onSwipeEnded() {
+                    const v = swipeCue.v;
+                    if (swipeCue.reach >= 1 && swipeCue.toBack)
+                        root.back(v);
+                    else if (swipeCue.reach >= 1)
+                        v.goForward();
+                    v.swipeX = 0;
+                }
+            }
+        }
 
         PageScrollBar {
             id: pageScrollBar
@@ -2569,6 +2618,16 @@ Window {
         s.runsOnSubFrames = false;
         root.profile.userScripts.insert(s);
     }
+    // Back and forward by a sideways touchpad swipe: the sideways steps nothing on the page scrolls by (Swipe.watcher)
+    function watchSwipes() {
+        const s = WebEngine.script();
+        s.name = "swipe";
+        s.sourceCode = Swipe.watcher;
+        s.injectionPoint = WebEngineScript.DocumentCreation;
+        s.worldId = WebEngineScript.ApplicationWorld;
+        s.runsOnSubFrames = false;
+        root.profile.userScripts.insert(s);
+    }
     // Fill: a saved login into the page on screen, from its Fill rows; the keys go back to the page, and a fill that did
     // not happen says why in the card
     function fillLogin(entry) {
@@ -4225,6 +4284,7 @@ Window {
         root.styleScrollbars();
         root.watchEdits();
         root.watchLogins();
+        root.watchSwipes();
         // what the engine gives a profile, before Settings changes it
         if (!root.primary) {
             root.engineFonts = Engine.fonts(root.profile);

@@ -57,7 +57,7 @@ qt_add_qml_module(browser URI Browser ${qml_compile}
     QML_FILES qml/Main.qml qml/BrowserView.qml qml/Session.qml qml/History.qml qml/Rail.qml qml/Omnibox.qml qml/AddressField.qml qml/AddressEditor.qml qml/CommandBar.qml qml/SuggestionRow.qml qml/KeyCap.qml qml/IconButton.qml
               qml/RailRows.js qml/PageMenu.js qml/PageState.js qml/LoadLine.qml qml/Busy.qml qml/Count.qml qml/RowMenu.qml qml/KeyMap.js qml/Lifecycle.js
               qml/Asks.js qml/AskSection.qml qml/AskSheet.qml qml/Sites.qml qml/TextButton.qml qml/Slab.qml qml/PageDialog.qml qml/PopupCard.qml
-              qml/Logins.js qml/DevTools.js
+              qml/Logins.js qml/DevTools.js qml/Swipe.js
               qml/Failures.js qml/FailurePage.qml qml/Welcome.qml
               qml/Find.js qml/Finder.qml qml/FindCard.qml
               qml/Downloads.js qml/Downloader.qml

@@ -1166,7 +1166,7 @@ QtObject {
         { name: "(Cancel them)", wait: 800, act: () => { for (const d of session.downloads.filter(d => d.file.startsWith("tick-"))) downloads.act(d.id, "cancel") },
           expect: () => !session.downloads.some(d => d.file.startsWith("tick-")) },
     ].concat(siteSteps, instanceSteps, linkSteps, windowSteps, privateSteps, internalSteps, edgeSteps, recallSteps, ownSteps, passwordSteps, passkeySteps, passwordFileSteps, chromeSteps, foxSteps, readerSteps,
-             printSteps, zenSteps, zenSessionSteps, zenRealSteps, railSteps, liftSteps, stripSteps, idleSteps, faviconSteps, glideSteps, notchSteps, signinSteps)
+             printSteps, zenSteps, zenSessionSteps, zenRealSteps, railSteps, liftSteps, stripSteps, idleSteps, faviconSteps, glideSteps, swipeSteps, notchSteps, signinSteps)
     // The site panel (PLAN.md 3.9), on a page of 127.0.0.1 (the asks above noted what it asked for). The check's
     // filter list refuses ads.test and hides div.check-ad; clicks and keys go in through the window system.
     readonly property var siteSteps: [
@@ -4178,6 +4178,31 @@ QtObject {
           act: () => { view.runJavaScript("document.getElementById('pane').remove(); document.body.insertAdjacentHTML('beforeend', '<div id=pane2 style=\\'position:fixed;inset:0;overflow:auto;background:#fff\\'><div style=\\'height:6000px\\'></div></div>')");
               check.later(() => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.swipe(c.x, c.y, -240, 2, 200) }) },
           expect: () => true, page: "document.getElementById('pane2').scrollTop", pageExpect: v => { probe.report("     new pane " + v); return v > 0 } },
+    ]
+    // Back and forward by a sideways touchpad swipe (Swipe.js, BrowserView, Main's swipe cue): far enough goes, a short one
+    // stays, and one over something that scrolls sideways scrolls it instead. A swipe right (pixels +x) goes back.
+    readonly property var swipeSteps: [
+        { group: "swipe" },
+        check.server,
+        { name: "(brook one on screen)", wait: 2500, act: () => { probe.back(app); app.go(check.local("/brook"), "new", "", "swipe") },
+          expect: () => view.title === "brook one" && !view.loading },
+        { name: "(then brook two in the same page)", wait: 2500, act: () => view.url = check.local("/brook-two"),
+          expect: () => view.title === "brook two" && !view.loading && view.canGoBack },
+        { name: "a swipe right goes back", wait: 2500,
+          act: () => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.pointer(c.x, c.y); probe.swipe(c.x, c.y, 0, 12, 16, 240) },
+          expect: () => view.title === "brook one" && !view.loading },
+        { name: "a swipe left goes forward", wait: 2500,
+          act: () => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.swipe(c.x, c.y, 0, 12, 16, -240) },
+          expect: () => view.title === "brook two" && !view.loading },
+        { name: "a short swipe stays", wait: 1500,
+          act: () => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.swipe(c.x, c.y, 0, 2, 200, 60) },
+          expect: () => view.title === "brook two" && view.swipeX === 0 },
+        { name: "(a sideways strip over the page, scrolled to its middle)", wait: 500,
+          act: () => view.runJavaScript("document.body.insertAdjacentHTML('beforeend', '<div id=strip style=\\'position:fixed;inset:0;overflow-x:auto\\'><div style=\\'width:6000px;height:100%\\'></div></div>'); strip.scrollLeft = 3000"),
+          expect: () => true, page: "document.getElementById('strip').scrollLeft", pageExpect: v => v === 3000 },
+        { name: "a swipe right over it scrolls the strip and stays", wait: 2000,
+          act: () => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.swipe(c.x, c.y, 0, 12, 16, 240) },
+          expect: () => view.title === "brook two", page: "document.getElementById('strip').scrollLeft", pageExpect: v => { probe.report("     strip " + v); return v < 3000 } },
     ]
     // Ctrl+L in the notch (PLAN.md 3.19, src/notch.*, NotchAddress): the check plays the shell. The command the browser
     // runs is a stand-in (no `qs` is ever run), and the island is the probe's own client on the notch socket.

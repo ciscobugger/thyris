@@ -92,7 +92,7 @@ void EngineCheck::pointer(qreal x, qreal y, int buttons, int modifiers) {
     m_buttons = buttons;
 }
 
-void EngineCheck::swipe(qreal x, qreal y, int dy, int steps, int stepMs) {
+void EngineCheck::swipe(qreal x, qreal y, int dy, int steps, int stepMs, int dx) {
     static QPointingDevice *pad = [] {
         auto *d = new QPointingDevice(QStringLiteral("check touchpad"), 4242, QInputDevice::DeviceType::TouchPad,
                                       QPointingDevice::PointerType::Finger,
@@ -108,7 +108,7 @@ void EngineCheck::swipe(qreal x, qreal y, int dy, int steps, int stepMs) {
     // handleWheelEvent is no template (no Delivery): each event is flushed through at once
     QWindowSystemInterface::handleWheelEvent(window, at, pad, local, global, QPoint(), QPoint(), Qt::NoModifier, Qt::ScrollBegin);
     QWindowSystemInterface::flushWindowSystemEvents();
-    const QPoint step(0, dy / qMax(1, steps));
+    const QPoint step(dx / qMax(1, steps), dy / qMax(1, steps));
     for (int i = 0; i < steps; ++i) {
         at += ulong(stepMs);
         QWindowSystemInterface::handleWheelEvent(window, at, pad, local, global, step, step * 3, Qt::NoModifier, Qt::ScrollUpdate);

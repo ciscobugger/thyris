@@ -561,8 +561,36 @@ WebEngineView {
     webChannelWorld: WebEngineScript.ApplicationWorld
     WebChannel {
         id: loginChannel
-        registeredObjects: [loginSink]
+        registeredObjects: [loginSink, swipeSink]
     }
+    // A sideways touchpad swipe (Swipe.js, Main's swipe cue): how far it went where nothing under the pointer scrolls
+    // that way, from the fingers going down (PageItem.touchpadGesture) to 40 ms after they lift, for the page's last
+    // steps on their way (Glide's momentum after the lift counts no further); then swipeEnded, and Main goes back or forward with it. Qt WebEngine has no touchpadGesture.
+    property real swipeX: 0
+    property bool swipeFingers: false
+    signal swipeEnded()
+    QtObject {
+        id: swipeSink
+        WebChannel.id: "swipe"
+        function free(dx) {
+            if (view.swipeFingers || swipeLate.running)
+                view.swipeX += dx;
+        }
+    }
+    Connections {
+        target: view
+        ignoreUnknownSignals: true
+        function onTouchpadGesture(down) {
+            if (down) {
+                swipeLate.stop();
+                view.swipeX = 0;
+            }
+            view.swipeFingers = down;
+            if (!down)
+                swipeLate.restart();
+        }
+    }
+    Timer { id: swipeLate; interval: 40; onTriggered: view.swipeEnded() }
     QtObject {
         id: loginSink
         WebChannel.id: "logins"

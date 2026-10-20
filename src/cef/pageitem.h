@@ -228,6 +228,8 @@ signals:
     // a WebChannel message one of Opsis's scripts sent from the page (qt.webChannelTransport in Opsis's world), for the
     // shim's webChannel
     void webChannelMessage(const QString &message);
+    // a touchpad's fingers down on it (a gesture began over the page) and lifted, for a sideways swipe back or forward
+    void touchpadGesture(bool fingersDown);
     void renderProcessPidChanged();
     void lifecycleStateChanged();
     void devToolsViewChanged();
@@ -335,6 +337,7 @@ private:
     QPointF m_wheelRest;
     bool m_wheelBegun = false;      // a touchpad gesture has sent its Began step (wheelEvent)
     QPoint m_wheelLast;             // the gesture's last step that moved, for the 1 px its End carries
+    bool m_fingersDown = false;     // between a touchpad gesture's Begin and its End or Glide's first step
     QTimer m_beat;
     // after the window's size settles, a fresh frame at the new size (PageItem::refreshFrame): CEF sends a frame only
     // when the page changes, and the one for the last size of a resize can be missed while its capture switches size
