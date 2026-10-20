@@ -1,4 +1,5 @@
 #include "picker.h"
+#include "shell.h"
 
 #include <QDir>
 #include <QFile>
@@ -91,9 +92,8 @@ bool Picker::pick(const QString &label) {
         if (serial == m_serial)
             end({});
     });
-    call->start(QStringLiteral("qs"), {QStringLiteral("-c"), QStringLiteral("tacit"), QStringLiteral("ipc"), QStringLiteral("call"),
-                                       QStringLiteral("files"), QStringLiteral("pick"), QDir::homePath(), shell,
-                                       QStringLiteral("browser"), label});
+    call->start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("files"), QStringLiteral("pick"), QDir::homePath(), shell,
+                                                              QStringLiteral("browser"), label});
     return true;
 }
 

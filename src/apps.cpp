@@ -1,4 +1,5 @@
 #include "apps.h"
+#include "shell.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -73,8 +74,7 @@ void Apps::reveal(const QString &path) {
         call->deleteLater();
         QProcess::startDetached(QStringLiteral("xdg-open"), {folder});
     });
-    call->start(QStringLiteral("qs"), {QStringLiteral("-c"), QStringLiteral("tacit"), QStringLiteral("ipc"), QStringLiteral("call"),
-                                       QStringLiteral("files"), QStringLiteral("reveal"), path});
+    call->start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("files"), QStringLiteral("reveal"), path});
 }
 
 static const QStringList webTypes{QStringLiteral("x-scheme-handler/http"), QStringLiteral("x-scheme-handler/https"), QStringLiteral("text/html")};

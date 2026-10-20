@@ -286,6 +286,9 @@ private:
     bool m_editable = false;
     // what Opsis's script in the page reports (scroll, size)
     void bridged(const QJsonObject &message);
+    // the clipboard through this window: a copy in the page onto the desktop's, the desktop's into the page as a paste
+    void copiedInPage(const QJsonObject &said);
+    bool pasteFromDesktop(bool plain);
     // the profile's scripts and this page's into the page
     void syncScripts();
     // a drag the page started: as a system drag (QDrag), then where it ended back to the page

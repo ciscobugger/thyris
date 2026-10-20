@@ -1,12 +1,12 @@
 #include "notch.h"
+#include "shell.h"
 
 #include <QLocalSocket>
 #include <QProcess>
 
 Notch::Notch(const QString &path, const QString &function, QObject *parent)
     : QObject(parent), m_path(path),
-      m_command{QStringLiteral("qs"), QStringLiteral("-c"), QStringLiteral("tacit"), QStringLiteral("ipc"), QStringLiteral("call"),
-                QStringLiteral("island"), function} {
+      m_command(QStringList{QStringLiteral("qs")} + shellIpc() + QStringList{QStringLiteral("island"), function}) {
     m_server.setSocketOptions(QLocalServer::UserAccessOption);
     connect(&m_server, &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = m_server.nextPendingConnection()) {

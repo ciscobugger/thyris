@@ -19,6 +19,7 @@
 #include <QDropEvent>
 #include <QFocusEvent>
 #include <QGuiApplication>
+#include <QBuffer>
 #include <QClipboard>
 #include <QHash>
 #include <QHoverEvent>
@@ -264,6 +265,18 @@ public:
                              visible.height, info.extra.coded_size.width, info.extra.coded_size.height);
             return;
         }
+        if (traced) {
+            static cef_rect_t lastVisible{}, lastContent{};
+            const cef_rect_t &content = info.extra.content_rect;
+            if (visible.width != lastVisible.width || visible.height != lastVisible.height || content.width != lastContent.width
+                || content.height != lastContent.height || content.x != lastContent.x || content.y != lastContent.y)
+                std::fprintf(stderr, "cef trace: frame coded %dx%d visible %d,%d %dx%d content %d,%d %dx%d source %s%dx%d\n",
+                             info.extra.coded_size.width, info.extra.coded_size.height, visible.x, visible.y, visible.width,
+                             visible.height, content.x, content.y, content.width, content.height,
+                             info.extra.has_source_size ? "" : "(none) ", info.extra.source_size.width, info.extra.source_size.height);
+            lastVisible = visible;
+            lastContent = content;
+        }
         EGLint attributes[20];
         int n = 0;
         const auto put = [&](EGLint name, EGLint value) { attributes[n++] = name; attributes[n++] = value; };
@@ -414,6 +427,106 @@ const char *const kWorldScript = R"JS(if (typeof qt === 'undefined') self.qt = {
     const watch = () => { soon(); new ResizeObserver(soon).observe(document.documentElement); };
     if (document.readyState === 'loading') addEventListener('DOMContentLoaded', watch); else watch();
 })(0);)JS";
+
+// The clipboard (2026-10-20, Discord: copy and paste between Thyris and every other app failed both ways). The engine
+// runs on Wayland on a connection of its own, which never has the keyboard, and Wayland gives the clipboard only to the
+// app that has it: this window. In Opsis's world in every frame this script tells the page's item what a copy or a cut
+// put there (PageItem::copiedInPage); a paste comes the other way (kPasteScript).
+const char *const kClipboardScript = R"JS((() => {
+    const tell = d => {
+        if (d && (d.text || d.html || d.png) && typeof __opsis === 'function')
+            __opsis(JSON.stringify({ k: 'clip', text: d.text || '', html: d.html || '', png: d.png || '' }));
+    };
+    const focused = () => {
+        let e = document.activeElement;
+        while (e && e.shadowRoot && e.shadowRoot.activeElement) e = e.shadowRoot.activeElement;
+        return e;
+    };
+    // what a copy takes when the page leaves it to the engine: a field's selected text (never a password's), else the
+    // selection as text and HTML
+    const selected = () => {
+        const e = focused();
+        if (e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement) {
+            if (e.type === 'password') return {};
+            try { return { text: e.value.slice(e.selectionStart, e.selectionEnd) }; } catch (x) { return {}; }
+        }
+        const s = getSelection();
+        if (!s || s.isCollapsed) return {};
+        const box = document.createElement('div');
+        for (let i = 0; i < s.rangeCount; i++) box.appendChild(s.getRangeAt(i).cloneContents());
+        return { text: s.toString(), html: box.innerHTML };
+    };
+    // the page's own handlers come between: what one of them set (and kept from the engine) is what was copied
+    for (const type of ['copy', 'cut']) {
+        let open = null, before = {};
+        addEventListener(type, e => {
+            if (!e.isTrusted) return;
+            open = e;
+            before = selected();
+            // a page that stops the event short of the window: the selection as it was
+            setTimeout(() => { if (open === e) { open = null; if (!e.defaultPrevented) tell(before); } }, 0);
+        }, true);
+        addEventListener(type, e => {
+            if (open !== e) return;
+            open = null;
+            const d = e.clipboardData;
+            tell(e.defaultPrevented ? { text: d ? d.getData('text/plain') : '', html: d ? d.getData('text/html') : '' } : before);
+        });
+    }
+    // what a page's own Copy button wrote (kClipboardPageScript), taken only while the person has just pressed something
+    addEventListener('thyris-clipboard', e => {
+        if (!navigator.userActivation || !navigator.userActivation.isActive) return;
+        try { tell(JSON.parse(e.detail)); } catch (x) {}
+    });
+})();)JS";
+// In the page's own world in every frame: navigator.clipboard, which a page's Copy button calls, tells Opsis's world
+// what it wrote once the engine has taken it
+const char *const kClipboardPageScript = R"JS((() => {
+    const c = navigator.clipboard;
+    if (!c || typeof c.writeText !== 'function') return;
+    const tell = d => dispatchEvent(new CustomEvent('thyris-clipboard', { detail: JSON.stringify(d) }));
+    const ownWriteText = c.writeText, ownWrite = c.write;
+    const base64 = blob => new Promise(done => {
+        const r = new FileReader();
+        r.onload = () => done(String(r.result).split(',')[1] || '');
+        r.onerror = () => done('');
+        r.readAsDataURL(blob);
+    });
+    const read = async items => {
+        const d = {};
+        for (const item of items || [])
+            for (const type of item.types) {
+                const blob = await item.getType(type);
+                if (type === 'text/plain') d.text = await blob.text();
+                else if (type === 'text/html') d.html = await blob.text();
+                else if (type === 'image/png') d.png = await base64(blob);
+            }
+        return d;
+    };
+    Object.defineProperty(c, 'writeText', { configurable: true, writable: true, value: function writeText(text) {
+        return ownWriteText.call(c, text).then(r => { tell({ text: String(text) }); return r; });
+    } });
+    if (typeof ownWrite === 'function')
+        Object.defineProperty(c, 'write', { configurable: true, writable: true, value: function write(items) {
+            return ownWrite.call(c, items).then(r => { read(items).then(tell, () => {}); return r; });
+        } });
+})();)JS";
+// A paste from the desktop's clipboard (PageItem::pasteFromDesktop), called with what it holds, in the frame with the
+// focus: the page's own paste handlers first (a chat takes a picture, an editor its HTML); left to the engine, the text
+// goes in where the caret is, as a paste puts it (never the HTML: the page's handlers clean that, the engine would not)
+const char *const kPasteScript = R"JS((p => {
+    let e = document.activeElement;
+    while (e && e.shadowRoot && e.shadowRoot.activeElement) e = e.shadowRoot.activeElement;
+    const at = e || document.body || document.documentElement;
+    const data = new DataTransfer();
+    if (p.text) data.setData('text/plain', p.text);
+    if (p.html) data.setData('text/html', p.html);
+    if (p.png) data.items.add(new File([Uint8Array.from(atob(p.png), c => c.charCodeAt(0))], 'image.png', { type: 'image/png' }));
+    if (at.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true, composed: true })) && p.text)
+        document.execCommand('insertText', false, p.text);
+}))JS";
+// a picture bigger than this stays on the desktop's clipboard (it goes to the page as text in a message)
+constexpr qsizetype kMostPasted = 16 * 1024 * 1024;
 
 CefRefPtr<CefDictionaryValue> dictionary(const QJsonObject &object) {
     CefRefPtr<CefValue> value = CefParseJSON(QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString(), JSON_PARSER_RFC);
@@ -617,6 +730,8 @@ CefRefPtr<CefDictionaryValue> scriptsInfo(const QList<ScriptSpec> &specs, int ge
         list->SetDictionary(list->GetSize(), s);
     };
     add("opsis-world", kWorldScript, true);
+    add("thyris-clipboard", kClipboardScript, true);
+    add("thyris-clipboard-page", kClipboardPageScript, false);
     for (const ScriptSpec &s : specs)
         add(s.key.toStdString(), s.source, s.opsisWorld);
     CefRefPtr<CefDictionaryValue> info = CefDictionaryValue::Create();
@@ -798,6 +913,10 @@ public:
     // answer (PageItem::answered). World 0 is the page's own; any other is Opsis's.
     void evaluate(int call, const QString &script, int world) {
         CefPostTask(TID_UI, base::BindOnce(&PageClient::evaluateNow, this, call, script.toStdString(), world != 0));
+    }
+    // a paste from the desktop's clipboard (PageItem::pasteFromDesktop), into the frame with the focus
+    void paste(const std::string &script) {
+        CefPostTask(TID_UI, base::BindOnce(&PageClient::pasteNow, this, script));
     }
     // the scripts every new document runs (PageItem::syncScripts): added and removed by their keys
     void setScripts(const QList<ScriptSpec> &scripts) {
@@ -1210,6 +1329,10 @@ public:
         devtools(QStringLiteral("Runtime.addBinding"), {{QStringLiteral("name"), QStringLiteral("__opsis")}, {QStringLiteral("executionContextName"), QStringLiteral("opsis")}});
         devtools(QStringLiteral("Page.addScriptToEvaluateOnNewDocument"),
                  {{QStringLiteral("source"), QString::fromLatin1(kWorldScript)}, {QStringLiteral("worldName"), QStringLiteral("opsis")}, {QStringLiteral("runImmediately"), true}});
+        devtools(QStringLiteral("Page.addScriptToEvaluateOnNewDocument"),
+                 {{QStringLiteral("source"), QString::fromLatin1(kClipboardScript)}, {QStringLiteral("worldName"), QStringLiteral("opsis")}, {QStringLiteral("runImmediately"), true}});
+        devtools(QStringLiteral("Page.addScriptToEvaluateOnNewDocument"),
+                 {{QStringLiteral("source"), QString::fromLatin1(kClipboardPageScript)}, {QStringLiteral("runImmediately"), true}});
         // the page's scripts go in before its first document: the item's syncScripts ends in setScriptsNow, which loads
         // the address kept in m_pending once every script is in
         m_firstLoad = true;
@@ -1533,6 +1656,11 @@ public:
             if (traced)
                 std::fprintf(stderr, "cef trace: page %p bridge %s from %s\n", static_cast<void *>(this), qPrintable(said.value(QStringLiteral("k")).toString()),
                              frame && frame->IsMain() ? "main" : "a frame");
+            // a copy, from any frame
+            if (said.value(QStringLiteral("k")).toString() == QStringLiteral("clip")) {
+                toItem([said](PageItem *item) { item->copiedInPage(said); });
+                return true;
+            }
             if (!frame || !frame->IsMain() && said.value(QStringLiteral("k")).toString() != QStringLiteral("channel"))
                 return true;
             if (said.value(QStringLiteral("k")).toString() != QStringLiteral("ctx"))
@@ -2010,6 +2138,24 @@ private:
             m_purposes.emplace(call, std::make_pair(purpose, key));
         page->GetHost()->ExecuteDevToolsMethod(call, method.toStdString(), dictionary(params));
     }
+    // in Opsis's world on the native route, where the page's own scripts cannot change what it uses; call 0 waits for no answer
+    void pasteNow(const std::string &script) {
+        CefRefPtr<CefBrowser> page = browser();
+        CefRefPtr<CefFrame> frame = page ? page->GetFocusedFrame() : nullptr;
+        if (!frame && page)
+            frame = page->GetMainFrame();
+        if (!frame)
+            return;
+        if (!nativeRoute) {
+            frame->ExecuteJavaScript(script, "", 0);
+            return;
+        }
+        CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create("opsis.eval");
+        message->GetArgumentList()->SetInt(0, 0);
+        message->GetArgumentList()->SetString(1, script);
+        message->GetArgumentList()->SetBool(2, true);
+        frame->SendProcessMessage(PID_RENDERER, message);
+    }
     void evaluateNow(int call, const std::string &script, bool opsisWorld) {
         if (nativeRoute) {
             CefRefPtr<CefBrowser> page = browser();
@@ -2215,6 +2361,7 @@ public:
     };
     // the newest frame onto this node; false when there is none yet
     bool show(QQuickWindow *window, const PageFrames::Shown &shown) {
+        const QSize before = frameSize();
         if (shown.texture) {
             Wrapped &w = wrapped[shown.texture];
             if (w.size != shown.size) {
@@ -2230,7 +2377,10 @@ public:
         } else if (!uploaded) {
             return false;
         }
-        markDirty(QSGNode::DirtyMaterial);
+        // Qt's setTexture works out the new texture coordinates but marks only the material dirty, so the renderer drew
+        // a frame of a new size with the last size's: after a retile the page showed stretched until it next drew,
+        // when the pointer came over it (Discord, 2026-10-20; the resize's hold had cropped the old frame to the new box)
+        markDirty(frameSize() != before ? QSGNode::DirtyMaterial | QSGNode::DirtyGeometry : QSGNode::DirtyMaterial);
         return true;
     }
     // the shown frame's size in pixels
@@ -2540,6 +2690,12 @@ void PageItem::wheelEvent(QWheelEvent *event) {
 // Chromium's key sequence: a raw key down, then the character it types if any (the page sees keydown and keypress), and
 // the key up. The event is kept until the page says it left it unhandled (unhandledKey).
 void PageItem::keyPressEvent(QKeyEvent *event) {
+    // a paste is this window's to give: the engine cannot read the desktop's clipboard (pasteFromDesktop)
+    const bool plainPaste = event->key() == Qt::Key_V && event->modifiers() == (Qt::ControlModifier | Qt::ShiftModifier);
+    if ((event->matches(QKeySequence::Paste) || plainPaste) && pasteFromDesktop(plainPaste)) {
+        event->accept();
+        return;
+    }
     if (auto host = hostOf(m_client.get())) {
         host->SendKeyEvent(Input::key(event, KEYEVENT_RAWKEYDOWN));
         if (!Input::keyText(event).isEmpty())
@@ -2589,6 +2745,52 @@ void PageItem::unhandledKey(int cefType, int nativeCode) {
         delete key;
         return;
     }
+}
+
+// ---- the clipboard, the desktop's through this window (kClipboardScript)
+
+// a copy or a cut in the page: what it took onto the desktop's clipboard
+void PageItem::copiedInPage(const QJsonObject &said) {
+    auto *mime = new QMimeData;
+    const QString text = said.value(QStringLiteral("text")).toString(), html = said.value(QStringLiteral("html")).toString();
+    if (!text.isEmpty())
+        mime->setText(text);
+    if (!html.isEmpty())
+        mime->setHtml(html);
+    const QByteArray png = QByteArray::fromBase64(said.value(QStringLiteral("png")).toString().toLatin1());
+    if (!png.isEmpty())
+        mime->setData(QStringLiteral("image/png"), png);
+    if (mime->formats().isEmpty()) {
+        delete mime;
+        return;
+    }
+    QGuiApplication::clipboard()->setMimeData(mime);
+}
+
+// the desktop's clipboard into the page: its text, and unless plain its HTML and a picture; false with no page yet
+bool PageItem::pasteFromDesktop(bool plain) {
+    if (!m_client || !m_client->browser())
+        return false;
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    QJsonObject held;
+    if (data && data->hasText())
+        held.insert(QStringLiteral("text"), data->text());
+    if (data && !plain) {
+        if (data->hasHtml())
+            held.insert(QStringLiteral("html"), data->html());
+        QByteArray png = data->data(QStringLiteral("image/png"));
+        if (png.isEmpty() && data->hasImage()) {
+            QBuffer buffer(&png);
+            buffer.open(QIODevice::WriteOnly);
+            qvariant_cast<QImage>(data->imageData()).save(&buffer, "PNG");
+        }
+        if (!png.isEmpty() && png.size() <= kMostPasted)
+            held.insert(QStringLiteral("png"), QString::fromLatin1(png.toBase64()));
+    }
+    if (!held.isEmpty())
+        m_client->paste(std::string(kPasteScript) + '(' + QJsonDocument(held).toJson(QJsonDocument::Compact).toStdString() + ')');
+    busy();
+    return true;
 }
 
 void PageItem::focusInEvent(QFocusEvent *event) {
@@ -2984,6 +3186,26 @@ void PageItem::reload() {
         page->Reload();
 }
 
+// Copy image (the page menu): the engine fetches the picture as the page has it (its cookies, its cache) and it goes on
+// the desktop's clipboard as PNG; Chromium's own copy would put it on the clipboard this window cannot reach
+class ImageCopy : public CefDownloadImageCallback {
+public:
+    void OnDownloadImageFinished(const CefString &, int, CefRefPtr<CefImage> image) override {
+        int width = 0, height = 0;
+        CefRefPtr<CefBinaryValue> png = image ? image->GetAsPNG(1.0f, true, width, height) : nullptr;
+        if (!png || !png->GetSize())
+            return;
+        QByteArray bytes(qsizetype(png->GetSize()), Qt::Uninitialized);
+        png->GetData(bytes.data(), png->GetSize(), 0);
+        QMetaObject::invokeMethod(qApp, [bytes] {
+            auto *mime = new QMimeData;
+            mime->setData(QStringLiteral("image/png"), bytes);
+            QGuiApplication::clipboard()->setMimeData(mime);
+        });
+    }
+    IMPLEMENT_REFCOUNTING(ImageCopy);
+};
+
 void PageItem::triggerWebAction(int action) {
     CefRefPtr<CefBrowser> page = m_client ? m_client->browser() : nullptr;
     if (!page)
@@ -2991,7 +3213,7 @@ void PageItem::triggerWebAction(int action) {
     CefRefPtr<CefFrame> frame = page->GetFocusedFrame() ? page->GetFocusedFrame() : page->GetMainFrame();
     // WebEngineView.WebAction's numbers
     enum { Back, Forward, Stop, Reload, Cut, Copy, Paste, Undo, Redo, SelectAll, ReloadAndBypassCache, PasteAndMatchStyle,
-           CopyImageUrlToClipboard = 18, DownloadImageToDisk = 19, InspectElement = 26, ExitFullScreen = 27, RequestClose = 28 };
+           CopyImageToClipboard = 17, CopyImageUrlToClipboard = 18, DownloadImageToDisk = 19, InspectElement = 26, ExitFullScreen = 27, RequestClose = 28 };
     switch (action) {
     case Back: page->GoBack(); break;
     case Forward: page->GoForward(); break;
@@ -3000,11 +3222,12 @@ void PageItem::triggerWebAction(int action) {
     case ReloadAndBypassCache: page->ReloadIgnoreCache(); break;
     case Cut: frame->Cut(); break;
     case Copy: frame->Copy(); break;
-    case Paste: frame->Paste(); break;
-    case PasteAndMatchStyle: frame->PasteAndMatchStyle(); break;
+    case Paste: pasteFromDesktop(false); break;
+    case PasteAndMatchStyle: pasteFromDesktop(true); break;
     case Undo: frame->Undo(); break;
     case Redo: frame->Redo(); break;
     case SelectAll: frame->SelectAll(); break;
+    case CopyImageToClipboard: if (m_menuImage.isValid()) page->GetHost()->DownloadImage(m_menuImage.toString().toStdString(), false, 0, false, new ImageCopy); break;
     case CopyImageUrlToClipboard: if (m_menuImage.isValid()) QGuiApplication::clipboard()->setText(m_menuImage.toString()); break;
     case DownloadImageToDisk: if (m_menuImage.isValid()) page->GetHost()->StartDownload(m_menuImage.toString().toStdString()); break;
     // without this the close waited out BrowserView's 1 s limit (2026-10-07, the owner: closing a page lagged)
