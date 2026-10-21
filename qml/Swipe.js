@@ -5,7 +5,10 @@
 // "swipe", which only that world can reach), how far each sideways wheel step went where nothing under the pointer could
 // scroll that way and the page did not take the step for itself (a map, a game). A step that scrolled something, or went
 // more down than across, holds the swipe off for 300 ms: a gesture that began on a carousel, or as a scroll down the
-// page, never turns into one when the carousel runs out. Pixel steps only (a touchpad's; a mouse wheel's are lines).
+// page, never turns into one when the carousel runs out. Nor does one over what turned swipe navigation off, as Chrome
+// reads it: overscroll-behavior-x none or contain on it or the page (Google Sheets: html { overscroll-behavior-x: none },
+// which scrolls its grid itself; a sideways scroll there went back a page, Discord 2026-10-21). Pixel steps only (a
+// touchpad's; a mouse wheel's are lines).
 // The listener is passive, so the page's scrolling never waits on it.
 var watcher = "(() => { if (window !== window.top) return;"
     + " const send = dx => { if (typeof qt !== 'undefined' && qt.webChannelTransport)"
@@ -14,9 +17,10 @@ var watcher = "(() => { if (window !== window.top) return;"
     + " if (root ? /^(hidden|clip)$/.test(s.overflowX) : !/^(auto|scroll|overlay)$/.test(s.overflowX)) return false;"
     + " const max = el.scrollWidth - el.clientWidth; if (max < 1) return false;"
     + " const at = s.direction === 'rtl' ? el.scrollLeft + max : el.scrollLeft; return dx < 0 ? at > 0.5 : at < max - 0.5 };"
+    + " const stops = el => /^(none|contain)$/.test(getComputedStyle(el).overscrollBehaviorX);"
     + " let held = 0;"
     + " addEventListener('wheel', e => { if (!e.isTrusted || e.deltaMode !== 0 || e.ctrlKey) return;"
     + " const now = performance.now(), dx = e.deltaX;"
-    + " if (Math.abs(dx) <= Math.abs(e.deltaY) || e.composedPath().some(n => n instanceof Element && scrolls(n, dx))) { held = now + 300; return }"
+    + " if (Math.abs(dx) <= Math.abs(e.deltaY) || e.composedPath().some(n => n instanceof Element && (stops(n) || scrolls(n, dx)))) { held = now + 300; return }"
     + " if (now < held) { held = now + 300; return }"
     + " setTimeout(() => { if (!e.defaultPrevented) send(dx) }, 0) }, { capture: true, passive: true }) })()";
