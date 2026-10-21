@@ -150,6 +150,7 @@ OwnPage {
             // only Clear browsing data shows these, and every cookie a page sets changes the count
             cookies: sub === "clear" && siteData ? (siteData.revision, siteData.allCookies()) : 0, clearing: sub === "clear" ? prefs.clearing : null,
             extensions: extensions,
+            extensionsInstall: extensionManager !== null,
             passwords: { state: Passwords.state, entries: Passwords.entries, removing: Passwords.removing, revealed: revealed },
             zen: { profile: Zen.profile.path ? Zen.profile : null, browser: Zen.browser, state: Zen.state, wrong: Zen.wrong, logins: Zen.logins, run: zenRun,
                    sites: Zen.sites, tabs: Zen.tabs, cookies: prefs.get("zenCookies"), openTabs: prefs.get("zenTabs"),

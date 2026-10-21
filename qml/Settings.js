@@ -521,7 +521,11 @@ function rows(s, sub, filter) {
         ? [{ kind: "note", key: "sites-none", label: "No site has a choice of its own yet. What you set in a site's panel (Ctrl+I) shows here." }]
         : s.siteChoices.map(c => ({ kind: "action", key: "forget:" + c.origin, label: c.host, detail: c.summary, action: "Forget",
                                     words: c.host + " " + c.summary })));
-    section("extensions", s.extensions.map(e => Object.assign(choice("ext:" + e.id, e.name, e.error ? "Failed: " + e.error : e.enabled ? "on" : "off"), { words: e.name })).concat([
+    // Thyris's engine installs none yet (no extension manager): a Choose that did nothing said so nowhere (Discord: a Web
+    // Store install, then a crash)
+    section("extensions", s.extensionsInstall === false
+        ? [{ kind: "note", key: "none", label: "Thyris can't add extensions yet. Ads are blocked by uBlock Origin Lite, which comes with it." }]
+        : s.extensions.map(e => Object.assign(choice("ext:" + e.id, e.name, e.error ? "Failed: " + e.error : e.enabled ? "on" : "off"), { words: e.name })).concat([
         { kind: "action", key: "install", label: "Install from a folder or .zip", value: "", action: "Choose" },
         { kind: "note", key: "access", label: "Each extension can read the sites it asks for." },
     ]));
