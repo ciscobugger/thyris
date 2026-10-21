@@ -287,7 +287,8 @@ Window {
                 return;
             }
             const from = !v || v.typedLoad ? "" : String(v.url) || (v.openedBy ? String(v.openedBy.url) : "");
-            downloadModel.requested(download, !v ? "" : v.holder ? v.holder.opener.pageId ?? "" : v.pageId ?? "", from, false);
+            // a sign-in's window has a holder but no opener: reading its opener threw, and the download was cancelled
+            downloadModel.requested(download, !v ? "" : v.holder ? v.holder.opener?.pageId ?? "" : v.pageId ?? "", from, false);
         }
     }
     // Retry for a download that failed in an earlier run (Downloader.fetch): its address in a hidden view
@@ -2181,10 +2182,13 @@ Window {
     // A sign-in from another app (appSigninComponent): one at a time, a new one in place of the one before. False when
     // the notch cannot take it at all (no shell socket, a private window): the caller opens it as a page.
     function appSigninLink(url, from, context) {
-        if (root.appSignin)
-            closeAppSignin(root.appSignin, false);
+        const old = root.appSignin;
         const w = appSigninComponent.createObject(made, { link: url, from: from ?? "", context: context ?? "" });
+        // the new one is in place before the old one closes: closing it looks for anything left open, and with no
+        // window shown yet (Thyris started for the sign-in) it found nothing and quit (a second sign-in link)
         root.appSignin = w;
+        if (old)
+            closeAppSignin(old, false);
         w.view.url = url;
         if (root.windowSignin.want(w))
             return true;

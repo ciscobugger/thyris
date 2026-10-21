@@ -2,6 +2,7 @@
 
 #include "pageitem.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -146,8 +147,15 @@ bool CefRuntime::start(int argc, char *argv[], const Options &options) {
 void CefRuntime::stop() {
     halting = true;
     PageItem::closeKept();
-    for (int waited = 0; pages > 0 && waited < 3000; waited += 10)
+    // Qt's events go on being handled while CEF stops: the event loop has returned, and a call CEF's thread had already
+    // queued to the GUI thread (PageItem's toItemNow, a navigation asking before it starts) waited for it forever, and
+    // CefShutdown on that thread: the browser never quit and kept its lock, so every later link failed. New calls
+    // return at once (halting); 50 ms at least lets ones already on their way through.
+    for (int waited = 0; (pages > 0 || waited < 50) && waited < 3000; waited += 10) {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
         QThread::msleep(10);
+    }
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     CefShutdown();
 }
 

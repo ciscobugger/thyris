@@ -582,7 +582,11 @@ WebEngineView {
         ignoreUnknownSignals: true
         function onTouchpadGesture(down) {
             if (down) {
-                swipeLate.stop();
+                // fingers back within the late steps' wait: the swipe before them still counts
+                if (swipeLate.running) {
+                    swipeLate.stop();
+                    view.swipeEnded();
+                }
                 view.swipeX = 0;
             }
             view.swipeFingers = down;

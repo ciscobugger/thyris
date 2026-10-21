@@ -78,13 +78,20 @@ void Apps::reveal(const QString &path) {
 }
 
 static const QStringList webTypes{QStringLiteral("x-scheme-handler/http"), QStringLiteral("x-scheme-handler/https"), QStringLiteral("text/html")};
-// The desktop file this build runs from: the CEF build's own launcher, not the Qt WebEngine build's browser.desktop
-// (2026-10-11: Make default on the CEF build sent links to the Qt WebEngine build)
+// The desktop file this build runs from, as its launcher names it in CHROME_DESKTOP (the package's thyris wrapper:
+// thyris.desktop; the dev machine's: opsis-new-engine.desktop). A fixed opsis-new-engine.desktop made Make default point
+// installs at a file they do not have, and links from other apps, app sign-ins too, stopped opening (2026-10-21).
+// Without the variable: the CEF build's own launcher, not the Qt WebEngine build's browser.desktop (2026-10-11).
+static QString desktopId() {
+    const QString named = qEnvironmentVariable("CHROME_DESKTOP");
+    if (!named.isEmpty())
+        return named;
 #ifdef BROWSER_CEF
-static const QString desktopId = QStringLiteral("opsis-new-engine.desktop");
+    return QStringLiteral("opsis-new-engine.desktop");
 #else
-static const QString desktopId = QStringLiteral("browser.desktop");
+    return QStringLiteral("browser.desktop");
 #endif
+}
 
 void Apps::lookUpDefault() {
     // check mode knows only what makeDefault() did: it never asks the desktop's own mimeapps.list
@@ -97,7 +104,7 @@ void Apps::lookUpDefault() {
     connect(process, &QProcess::finished, this, [this, process] {
         const QStringList ids = QString::fromUtf8(process->readAllStandardOutput()).split(u'\n', Qt::SkipEmptyParts);
         process->deleteLater();
-        m_default = ids.size() == 2 && ids.at(0).trimmed() == desktopId && ids.at(1).trimmed() == desktopId
+        m_default = ids.size() == 2 && ids.at(0).trimmed() == desktopId() && ids.at(1).trimmed() == desktopId()
             ? QStringLiteral("yes") : QStringLiteral("no");
         emit defaultFound();
     });
@@ -114,7 +121,7 @@ void Apps::lookUpDefault() {
 
 void Apps::makeDefault() {
     if (dryRun) {
-        m_lastDefaulted = QStringLiteral("xdg-mime default ") + desktopId + u' ' + webTypes.join(u' ');
+        m_lastDefaulted = QStringLiteral("xdg-mime default ") + desktopId() + u' ' + webTypes.join(u' ');
         lookUpDefault();
         return;
     }
@@ -127,5 +134,5 @@ void Apps::makeDefault() {
         if (error == QProcess::FailedToStart)
             process->deleteLater();
     });
-    process->start(QStringLiteral("xdg-mime"), QStringList{QStringLiteral("default"), desktopId} + webTypes);
+    process->start(QStringLiteral("xdg-mime"), QStringList{QStringLiteral("default"), desktopId()} + webTypes);
 }

@@ -2620,7 +2620,8 @@ void PageItem::wheelEvent(QWheelEvent *event) {
         std::fflush(file);
     }
     // the fingers on the touchpad: Glide's steps after they lift are the application's own, and Glide holds the End
-    if (event->phase() == Qt::ScrollBegin && !m_fingersDown) {
+    // every Begin starts a gesture: an End that went to another item left the last one down
+    if (event->phase() == Qt::ScrollBegin) {
         m_fingersDown = true;
         emit touchpadGesture(true);
     } else if (m_fingersDown && (event->phase() == Qt::ScrollEnd || event->source() == Qt::MouseEventSynthesizedByApplication)) {
