@@ -308,6 +308,7 @@ int main(int argc, char *argv[]) {
         from = Instance::caller(&callerTitle);
     const QString context = startUrl.isEmpty() ? QString() : Instance::context(callerTitle);
     Instance instance(dataDir);
+    CefRuntime::onRelaunch([&instance](const QString &url) { emit instance.opened(QUrl(url), QString(), QString()); });
     switch (instance.start(startUrl, from, context)) {
     case Instance::HandedOff:
         return 0;

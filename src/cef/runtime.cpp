@@ -85,6 +85,21 @@ public:
     // Pop-ups likewise: Chromium refused one opened without a click before CEF asked Opsis (OnBeforePopup), so Opsis
     // never knew of it (no count, no Allow); now every one comes to Opsis, which refuses or opens it (Main.qml,
     // PageState.newWindow, the site panel's Pop-ups), as with Qt WebEngine.
+    // the link a second launch brought, to Thyris; true: Chromium opens nothing of its own
+    bool OnAlreadyRunningAppRelaunch(CefRefPtr<CefCommandLine> commandLine, const CefString &) override {
+        CefCommandLine::ArgumentList args;
+        commandLine->GetArguments(args);
+        const QString url = args.empty() ? QString() : QString::fromStdString(args.back().ToString());
+        QMetaObject::invokeMethod(qApp, [url] {
+            if (relaunched())
+                relaunched()(url);
+        }, Qt::QueuedConnection);
+        return true;
+    }
+    static std::function<void(const QString &)> &relaunched() {
+        static std::function<void(const QString &)> handler;
+        return handler;
+    }
     void OnContextInitialized() override {
         CefRequestContext::GetGlobalContext()->SetContentSetting(CefString(), CefString(), CEF_CONTENT_SETTING_TYPE_AUTOMATIC_DOWNLOADS,
                                                                  CEF_CONTENT_SETTING_VALUE_ALLOW);
@@ -166,3 +181,4 @@ QString CefRuntime::dataPath() {
 }
 
 bool CefRuntime::stopping() { return halting; }
+void CefRuntime::onRelaunch(std::function<void(const QString &url)> handler) { App::relaunched() = std::move(handler); }

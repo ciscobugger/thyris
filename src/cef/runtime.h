@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <functional>
 
 // CEF in the browser process (book4-edge/opsis-cef-port-plan.md). Started once, before QGuiApplication: its loop on a
 // thread of its own (polled from Qt's loop every 1 ms it cost 0.75 of a core, 2026-10-06), pages drawn off-screen for
@@ -26,4 +27,7 @@ void pageClosed();
 bool stopping();
 // Options::dataPath as start() was given it: Chromium's user data folder (its Dictionaries/ among the rest)
 QString dataPath();
+// A second launch that reached Chromium's own singleton (two started at once, before either held Thyris's lock): its link,
+// on the GUI thread, as one handed over to Thyris (Instance::opened). Chromium opened a plain Chrome window for it.
+void onRelaunch(std::function<void(const QString &url)> handler);
 }
