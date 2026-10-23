@@ -131,6 +131,15 @@ QtObject {
         // navigating away: the page left joins its thread's trail (Ctrl+L "In this thread")
         if (fields.url !== undefined && fields.url !== p.url && p.url && p.title)
             leave(p);
+        // a pin loading its start follows that load's redirects on its own site (homeOf)
+        if (p.homing) {
+            if (fields.url && siteOf(fields.url) === siteOf(p.home))
+                p.home = fields.url;
+            if (fields.loading === true)
+                p.homing = "loading";
+            else if (fields.loading === false && p.homing === "loading")
+                delete p.homing;
+        }
         let differs = false;
         for (const k in fields)
             if (p[k] !== fields[k]) { p[k] = fields[k]; differs = true; }
@@ -490,7 +499,8 @@ QtObject {
         const have = always.find(id => siteOf(pages[id].url) === siteOf(url));
         if (have)
             return have;
-        const p = { id: uid(), thread: "", url: url, title: title ?? "", icon: icon ?? "", lastActive: Date.now(), state: "unloaded" };
+        const p = { id: uid(), thread: "", url: url, home: url, homing: true, title: title ?? "", icon: icon ?? "", lastActive: Date.now(),
+                    state: "unloaded" };
         pages[p.id] = p;
         always.push(p.id);
         learned.always = true;
@@ -513,6 +523,7 @@ QtObject {
         }
         detach(pageId);
         p.thread = "";
+        p.home = p.url;
         always.push(pageId);
         learned.always = true;
         touch();
@@ -544,6 +555,35 @@ QtObject {
     function leavesAlways(pageId, url) {
         const p = pages[pageId];
         return !!p && p.thread === "" && /^https?:/i.test(url) && siteOf(url) !== siteOf(p.url);
+    }
+
+    // A pin's start (PLAN.md 3.12): the address it was pinned at, which follows the redirects of a load of it
+    // (mail.google.com/ to /mail/u/0/); pins from before 2026-10-23 start at their site's root. Its address with
+    // another # part is still the start, so reading a mail in Gmail is not away from it.
+    function homeOf(pageId) {
+        const p = pages[pageId];
+        return p ? p.home || ((/^[a-z]+:\/\/[^\/?#]+/i.exec(p.url) ?? [""])[0] + "/") : "";
+    }
+    function awayFromHome(pageId) {
+        const p = pages[pageId];
+        const spot = url => String(url).split("#")[0].replace(/^[a-z][a-z0-9+.-]*:\/\/(www\.)?/i, "").replace(/\/+$/, "");
+        return !!p && p.thread === "" && !!p.url && spot(p.url) !== spot(homeOf(pageId));
+    }
+    // The pin used last, while it is away from its start: its page shows as a row under the pins, so what you
+    // opened in it is not hidden in its cell (immaculate_chipmunk, 2026-10-23)
+    function awayPin() {
+        const last = always.reduce((a, id) => !a || (pages[id].lastActive ?? 0) > (pages[a].lastActive ?? 0) ? id : a, "");
+        return last && awayFromHome(last) ? last : "";
+    }
+    // Back to the start: Main loads homeOf in the pin's view
+    function sendHome(pageId) {
+        const p = pages[pageId];
+        if (!p || p.thread !== "")
+            return "";
+        p.home = homeOf(pageId);
+        p.homing = true;
+        touch();
+        return p.home;
     }
 
     // This window's open threads, top to bottom.

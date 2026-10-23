@@ -3547,6 +3547,18 @@ Window {
             break;
         }
         case "copyLast": { const last = sessionModel.pages[sessionModel.mostRecentPage(ref)]; if (last) copyText(last.url); break; }
+        // the pin away from its start (Session.awayPin) goes back to it, in front
+        case "pinHome": {
+            const home = sessionModel.sendHome(ref);
+            if (!home)
+                break;
+            if (views[ref] && String(views[ref].url) !== "")
+                views[ref].url = home;
+            else
+                sessionModel.update(ref, { url: home });
+            show(ref);
+            break;
+        }
         case "moveLeft": sessionModel.moveAlways(ref, -1); break;
         case "moveRight": sessionModel.moveAlways(ref, 1); break;
         // the cell's page leaves the lists every main window shares: its view goes in each window that has one

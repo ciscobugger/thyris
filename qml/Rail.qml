@@ -954,6 +954,15 @@ Item {
             out.push({ id: "", more: ids.length - 9 });
         return out;
     }
+    // the pin used last while it is away from its start (Session.awayPin), as a page row under the cells; the unread
+    // count stays on its cell
+    readonly property var awayPage: {
+        session.revision;
+        const id = rail.offTheRecord ? "" : session.awayPin();
+        const p = id ? session.pages[id] : null;
+        return p ? { id: id, icon: p.icon || "", current: id === session.currentPage,
+                     title: p.title ? RailRows.trimTitle(p.title.replace(/^\(\d+\)\s+/, ""), p.url) : RailRows.untitled(p.url) } : null;
+    }
     Item {
         id: alwaysRow
         objectName: "alwaysRow"
@@ -961,7 +970,7 @@ Item {
         // under the first pin, 2026-10-09)
         visible: !rail.inEarlier && (rail.cells.length > 0 || footHint.shown)
         anchors { bottom: foot.top; bottomMargin: 6; left: parent.left; right: parent.right }
-        height: pinnedLabel.height + (rail.cells.length > 0 ? grid.height : footHint.implicitHeight + 8)
+        height: pinnedLabel.height + (rail.cells.length > 0 ? grid.height + (awayRow.visible ? awayRow.height + 4 : 0) : footHint.implicitHeight + 8)
 
         // the group's label, as Tacit Settings labels its groups
         Label {
@@ -1093,6 +1102,75 @@ Item {
                         }
                         onContainsMouseChanged: containsMouse && cell.modelData.id ? rail.showTip(cell, cell.modelData.id) : rail.hideTip(cell)
                     }
+                }
+            }
+        }
+
+        // as a page row: wash, 16 px favicon, title; with the pointer on it, home takes the pin back to its start
+        Item {
+            id: awayRow
+            objectName: "pinAway"
+            visible: rail.awayPage !== null && rail.cells.length > 0
+            anchors { top: grid.bottom; topMargin: 4; left: parent.left; right: parent.right }
+            height: 33
+            readonly property bool hovered: awayArea.containsMouse || homeArea.containsMouse
+            Rectangle {
+                anchors { fill: parent; leftMargin: 6; rightMargin: 6; bottomMargin: 1 }
+                radius: Theme.rounding.verysmall
+                color: awayArea.pressed && awayArea.containsMouse ? Theme.rowPressed
+                     : rail.awayPage && rail.awayPage.current ? Theme.rowCurrent
+                     : awayRow.hovered ? Theme.rowHover : Theme.transparentize(Theme.onSurface, 1)
+                Behavior on color { CAnim { hover: true } }
+            }
+            MouseArea {
+                id: awayArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: rail.activate(rail.awayPage.id)
+                onContainsMouseChanged: containsMouse ? rail.showTip(awayRow, rail.awayPage.id) : rail.hideTip(awayRow)
+            }
+            Image {
+                id: awayIcon
+                x: 16
+                anchors.verticalCenter: parent.verticalCenter
+                width: 16; height: 16
+                sourceSize: Qt.size(32, 32)
+                source: rail.awayPage ? (Engine.iconRevision, Engine.keptIcon(String(rail.awayPage.icon))) : ""
+                visible: status === Image.Ready
+            }
+            Symbol {
+                x: 16
+                anchors.verticalCenter: parent.verticalCenter
+                width: 16
+                visible: !awayIcon.visible
+                text: "language"
+                iconSize: 16
+                color: Theme.colSubtext
+            }
+            Label {
+                anchors { left: parent.left; leftMargin: 40; right: home.left; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                text: rail.awayPage ? rail.awayPage.title : ""
+                font.pixelSize: Theme.font.body
+                weight: rail.awayPage && rail.awayPage.current ? Font.Medium : Theme.font.mainAxes.wght
+                color: Theme.colOnLayer0
+                opacity: rail.awayPage && rail.awayPage.current ? 1 : rail.dim
+            }
+            Symbol {
+                id: home
+                anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
+                visible: awayRow.hovered
+                width: 20; height: 20
+                text: "home"
+                iconSize: 16
+                color: homeArea.containsMouse ? Theme.colOnLayer0 : Theme.colSubtext
+                MouseArea {
+                    id: homeArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: rail.command("pinHome", rail.awayPage.id, null)
+                    onContainsMouseChanged: containsMouse ? rail.showHint(home, "Back to the start", omni.hostOf(rail.session.homeOf(rail.awayPage.id)))
+                                                          : rail.hideTip(home)
                 }
             }
         }

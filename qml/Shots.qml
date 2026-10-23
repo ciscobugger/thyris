@@ -430,6 +430,8 @@ QtObject {
         "row-menu-move": () => { everyday(); rail.showMenu("p:" + session.threads[0].pages[0], true); },
         "thread-menu": () => { everyday(); rail.showMenu("t:" + session.threads[1].id); },
         "always-menu": () => { everyday(); session.update("a0", { state: "frozen" }); rail.showMenu("a:a1"); },
+        // 3.12: the pin used last, away from its start, as a row under the pins
+        "always-away": () => { everyday(); session.update("a4", { url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", title: "(3) Me at the zoo - YouTube", lastActive: Date.now() }); },
         // 3.13: a page held between two pages of the open thread (the 2 px line), and over a folded thread
         // 3.17: Ctrl+N after a window closed: the new window's rail has no threads of its own, Earlier and Always are
         // every window's (the closed window's Flights thread first in Earlier), and the card offers the window back
