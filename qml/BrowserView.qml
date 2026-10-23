@@ -32,6 +32,7 @@ WebEngineView {
     signal closeKept()                      // Stay at the "Leave this page?" of a close
     signal selfClosed()                     // the page called window.close() (an attached popup closes on it)
     signal closeWanted()                    // Go back on a failure with nothing to go back to
+    signal zoomWanted(int steps)            // Ctrl and the wheel, or a pinch, over the page (PageItem.zoomGesture)
     signal processStopped(string status, int code)  // renderProcessTerminated; `lastPid` was the process
     signal saveWanted(var ask)              // Save at a private window's "Save to the main profile?" (PLAN.md 3.14)
     signal loginFailed(string text)         // a login not saved or not filled, in the card's words (Logins.failed)
@@ -580,6 +581,7 @@ WebEngineView {
     Connections {
         target: view
         ignoreUnknownSignals: true
+        function onZoomGesture(steps) { view.zoomWanted(steps) }
         function onTouchpadGesture(down) {
             if (down) {
                 // fingers back within the late steps' wait: the swipe before them still counts

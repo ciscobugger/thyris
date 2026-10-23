@@ -35,6 +35,7 @@
 #include <QSet>
 #include <QStyleHints>
 #include <QWheelEvent>
+#include <QNativeGestureEvent>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
@@ -2628,6 +2629,20 @@ void PageItem::wheelEvent(QWheelEvent *event) {
         m_fingersDown = false;
         emit touchpadGesture(false);
     }
+    // Ctrl and the wheel zooms the page, as in Chrome, where the browser takes it before the page does: a notch a step,
+    // a touchpad's smooth steps adding up to one
+    if (event->modifiers() & Qt::ControlModifier) {
+        m_zoomRest += event->angleDelta().y();
+        const qreal notch = QWheelEvent::DefaultDeltasPerStep;
+        const int steps = int(m_zoomRest / notch);
+        if (steps != 0) {
+            m_zoomRest -= steps * notch;
+            emit zoomGesture(steps);
+        }
+        event->accept();
+        return;
+    }
+    m_zoomRest = 0;
     if (auto host = hostOf(m_client.get())) {
         // whole pixels to CEF, the fraction kept for the next step
         m_wheelRest += Input::wheelPixels(event);
@@ -2694,6 +2709,27 @@ void PageItem::wheelEvent(QWheelEvent *event) {
         busy();
     }
     event->accept();
+}
+
+// A touchpad pinch zooms the page in the site's zoom steps (no pinch reached the page at all on CEF, Discord 2026-10-23)
+bool PageItem::event(QEvent *event) {
+    if (event->type() == QEvent::NativeGesture) {
+        auto *g = static_cast<QNativeGestureEvent *>(event);
+        if (g->gestureType() == Qt::ZoomNativeGesture) {
+            m_pinchRest += g->value();
+            // a step every 15 % of the fingers' spread, the rest kept for the next
+            while (qAbs(m_pinchRest) >= 0.15) {
+                const int step = m_pinchRest > 0 ? 1 : -1;
+                m_pinchRest -= step * 0.15;
+                emit zoomGesture(step);
+            }
+        } else if (g->gestureType() == Qt::EndNativeGesture) {
+            m_pinchRest = 0;
+        }
+        event->accept();
+        return true;
+    }
+    return QQuickItem::event(event);
 }
 
 // Chromium's key sequence: a raw key down, then the character it types if any (the page sees keydown and keypress), and

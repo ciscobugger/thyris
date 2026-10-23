@@ -1577,6 +1577,8 @@ Window {
         BrowserView {
             anchors.fill: parent
             visible: false
+            // as Ctrl+Plus and Ctrl+Minus: the site's zoom, not on Opsis's own pages
+            onZoomWanted: steps => { for (let i = 0; i < Math.abs(steps); i++) root.act(steps > 0 ? "zoomIn" : "zoomOut"); }
             readsSections: root.sectionStripOn && !root.offTheRecord
             adblock: root.adblock
             session: sessionModel

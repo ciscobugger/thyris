@@ -230,6 +230,9 @@ signals:
     void webChannelMessage(const QString &message);
     // a touchpad's fingers down on it (a gesture began over the page) and lifted, for a sideways swipe back or forward
     void touchpadGesture(bool fingersDown);
+    // Ctrl and the wheel, or a touchpad pinch, over the page: zoom it this many steps (+ in, - out). Chrome zooms in its
+    // own browser layer before the page sees the wheel; CEF's off-screen view never does, so Opsis steps its site zoom
+    void zoomGesture(int steps);
     void renderProcessPidChanged();
     void lifecycleStateChanged();
     void devToolsViewChanged();
@@ -252,6 +255,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    bool event(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     void focusInEvent(QFocusEvent *event) override;
@@ -338,6 +342,8 @@ private:
     bool m_wheelBegun = false;      // a touchpad gesture has sent its Began step (wheelEvent)
     QPoint m_wheelLast;             // the gesture's last step that moved, for the 1 px its End carries
     bool m_fingersDown = false;     // between a touchpad gesture's Begin and its End or Glide's first step
+    qreal m_zoomRest = 0;           // Ctrl+wheel toward the next zoom step (120 a notch)
+    qreal m_pinchRest = 0;          // a pinch's scale toward the next zoom step
     QTimer m_beat;
     // after the window's size settles, a fresh frame at the new size (PageItem::refreshFrame): CEF sends a frame only
     // when the page changes, and the one for the last size of a resize can be missed while its capture switches size
