@@ -15,6 +15,8 @@
 #include <QCursor>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QTimer>
 #include <QDrag>
 #include <QDropEvent>
 #include <QFocusEvent>
@@ -85,6 +87,7 @@
 #include "include/wrapper/cef_closure_task.h"
 
 #include <chrono>
+#include <csignal>
 
 
 namespace {
@@ -3417,8 +3420,23 @@ void PageItem::waitForPage() {
 }
 
 void PageItem::endAndReload() {
-    if (m_client)
-        m_client->endAndReload();
+    if (!m_client)
+        return;
+    m_client->endAndReload();
+    // The engine asks the page's process to exit; one whose thread is stuck in a send to the browser never finishes
+    // exiting, and the page stayed "not answering" for minutes (VM test 2026-10-24: every thread in do_exit but one).
+    // Still there 2 s on, the process is killed, as Chrome's task manager ends one: its end reloads the page.
+    const qint64 pid = m_renderPid;
+    if (pid <= 1)
+        return;
+    QTimer::singleShot(2000, this, [this, pid] {
+        if (m_renderPid != pid)
+            return;
+        // only this page's process, which runs the engine's helper beside this program
+        const QString exe = QFile::symLinkTarget(QStringLiteral("/proc/%1/exe").arg(pid));
+        if (!exe.isEmpty() && QFileInfo(exe).fileName().startsWith(u"browser-page"))
+            ::kill(pid_t(pid), SIGKILL);
+    });
 }
 
 void PageItem::stop() {
