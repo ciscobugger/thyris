@@ -94,9 +94,14 @@ int Instance::start(const QUrl &url, const QString &from, const QString &context
                     m_lock->tryLock(0);
                 }
                 QLocalServer::removeServer(m_path);
-                QProcess::startDetached(QStringLiteral("qs"), {QStringLiteral("-c"), QStringLiteral("tacit"), QStringLiteral("ipc"),
-                                                              QStringLiteral("call"), QStringLiteral("island"), QStringLiteral("note"),
-                                                              QStringLiteral("error"), QStringLiteral("Thyris wasn't answering · restarted")});
+                // the shell is reached by its path, TACIT_SHELL, as Tacit's own helpers reach it: on an install the
+                // config name "tacit" names /etc/xdg/quickshell/tacit, which is not the path the shell runs from (VM test)
+                const QString shell = qEnvironmentVariable("TACIT_SHELL");
+                QStringList args = shell.isEmpty() ? QStringList{QStringLiteral("-c"), QStringLiteral("tacit")}
+                                                   : QStringList{QStringLiteral("-p"), shell};
+                args << QStringLiteral("ipc") << QStringLiteral("call") << QStringLiteral("island") << QStringLiteral("note")
+                     << QStringLiteral("error") << QStringLiteral("Thyris wasn't answering · restarted");
+                QProcess::startDetached(QStringLiteral("qs"), args);
                 return m_server.listen(m_path) ? Listening : Failed;
             }
             return result == Held ? Queued : NoAnswer;
