@@ -192,6 +192,13 @@ function crash(c) {
                   details: [how + " · pid " + c.pid + (c.stop ? " · journal: " + c.stop.source + ", " + clock(c.stop.at) : "")] });
 }
 
+// The page's process stopped answering: Wait gives it more time, Reload ends the process and loads the page again.
+function unresponsive(c) {
+    const host = PageState.pageHost(c.url) || "The page";
+    return page({ kind: "unresponsive", url: c.url, host: host, at: c.at, key: c.url + " " + c.at, title: "This page isn't answering",
+                  actions: [{ label: "Wait", action: "wait" }, { label: "Reload", action: "reload" }] });
+}
+
 // What the last start left behind (`last`: the run record, { clean, alive, page, suspect }, or null on a
 // first start): whether the browser did not close cleanly, when it was last seen running, the page that was
 // on screen, and the page to leave out because the browser stopped again within a minute of opening it.

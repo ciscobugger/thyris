@@ -72,6 +72,9 @@ class PageItem : public QQuickItem {
     // the process the page runs in (as the system numbers it, outside the sandbox), 0 until it says; a new one after a
     // crash, a reload or a move to another site's process
     Q_PROPERTY(qint64 renderProcessPid READ renderProcessPid NOTIFY renderProcessPidChanged)
+    // the page's process has stopped answering (Chromium's hang monitor); the page says so, and waitForPage gives it more
+    // time or endAndReload ends the process and loads the page again
+    Q_PROPERTY(bool unresponsive READ unresponsive NOTIFY unresponsiveChanged)
     // Qt's LifecycleState: 0 active, 1 frozen (kept as active here), 2 discarded: the page closes (its process and
     // memory freed) and keeps its address, title and back/forward list; active again, it is made anew from that list
     // (Opsis's history patch) or loads its address afresh
@@ -132,6 +135,8 @@ public:
     QPointF scrollPosition() const { return m_scrollPosition; }
     bool shared() const { return m_shared; }
     qint64 renderProcessPid() const { return m_renderPid; }
+    bool unresponsive() const { return m_unresponsive; }
+    void setUnresponsive(bool on);
     int lifecycleState() const { return m_lifecycle; }
     void setLifecycleState(int state);
     bool isFullScreen() const { return m_fullScreen; }
@@ -151,6 +156,8 @@ public:
     Q_INVOKABLE void goBackOrForward(int offset);
     Q_INVOKABLE void goForward();
     Q_INVOKABLE void reload();
+    Q_INVOKABLE void waitForPage();
+    Q_INVOKABLE void endAndReload();
     // Qt WebEngine's loadHtml: `html` as the document at `baseUrl` (its origin, cookies and storage), no request sent
     // for it; with no base, a page of its own at about:blank
     Q_INVOKABLE void loadHtml(const QString &html, const QUrl &baseUrl = QUrl());
@@ -234,6 +241,7 @@ signals:
     // own browser layer before the page sees the wheel; CEF's off-screen view never does, so Opsis steps its site zoom
     void zoomGesture(int steps);
     void renderProcessPidChanged();
+    void unresponsiveChanged();
     void lifecycleStateChanged();
     void devToolsViewChanged();
     void inspectedViewChanged();
@@ -325,6 +333,7 @@ private:
     QString m_lastWebAuthnAnswer;      // the checks': "<request> <op>", never the PIN
     bool m_loading = false;
     qint64 m_renderPid = 0;
+    bool m_unresponsive = false;
     int m_lifecycle = 0;
     QUrl m_givenUrl;            // loadHtml before the page is made: handed to its client in openNow
     QByteArray m_givenHtml;

@@ -374,6 +374,10 @@ WebEngineView {
         const f = failure;
         if (!f)
             return;
+        if (f.kind === "unresponsive") {
+            endAndReload();
+            return;
+        }
         if (f.fallback)
             fallBackTo(f.fallback);
         if (f.committed || String(url) === f.url)
@@ -582,6 +586,14 @@ WebEngineView {
         target: view
         ignoreUnknownSignals: true
         function onZoomGesture(steps) { view.zoomWanted(steps) }
+        // The page's process stopped answering (CEF's page only, 2026-10-24): its failure page offers Wait and Reload,
+        // and goes when the process answers again, waits, or is ended
+        function onUnresponsiveChanged() {
+            if (view.unresponsive)
+                view.failure = Object.assign(Failures.unresponsive({ url: String(view.url), at: Date.now() }), { committed: true });
+            else if (view.failure && view.failure.kind === "unresponsive")
+                view.failure = null;
+        }
         function onTouchpadGesture(down) {
             if (down) {
                 // fingers back within the late steps' wait: the swipe before them still counts

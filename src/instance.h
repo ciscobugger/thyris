@@ -26,9 +26,11 @@ public:
     bool listening() const { return m_server.isListening(); }
     // With no browser running on this profile, takes the lock and listens (Listening; Failed when it cannot listen,
     // and the lock still keeps later starts from making a second browser on the profile). Otherwise hands `url`,
-    // `from` and `context` to the one running: HandedOff once it took them; Queued when it holds the link unanswered
-    // after 5 s (busy: it opens it once its event loop runs). One that is quitting takes no link (close()), so this
-    // tries again, and takes the lock itself once that browser has gone; NoAnswer after 10 s of that.
+    // `from` and `context` to the one running: HandedOff once it took them. One that holds the link unanswered for 4 s
+    // (hung), or takes none for 10 s (it keeps the lock), is ended if it is this executable (SIGTERM, SIGKILL after 3 s),
+    // and this one takes the lock (Listening), with a line in the notch; Queued / NoAnswer when that process is not
+    // ours to end. One that is quitting takes no link (close()), so this tries again, and takes the lock itself once
+    // that browser has gone.
     Q_INVOKABLE int start(const QUrl &url = QUrl(), const QString &from = QString(), const QString &context = QString());
     // Another browser holds this profile now (its lock), without taking the lock: the CEF build asks before it starts
     // an engine of its own (main).

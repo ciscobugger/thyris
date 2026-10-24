@@ -3844,6 +3844,7 @@ Window {
         case "reload": v.retry(); return;
         case "back": v.leave(true); return;
         case "continue": v.continueCertificate(); return;
+        case "wait": v.waitForPage(); return;
         // the address with the history's host one edit away in place of the one that has no address
         case "near": v.url = f.url.replace(/^([a-z][a-z0-9+.-]*:\/\/(?:[^\/?#@]*@)?)[^\/:?#]*/i, "$1" + f.near); return;
         case "search": v.url = omniModel.searchUrl(f.search); return;

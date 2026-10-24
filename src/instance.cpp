@@ -4,6 +4,7 @@
 #include <QCryptographicHash>
 #include <QDeadlineTimer>
 #include <QDir>
+#include <QFileInfo>
 #include <QFile>
 #include <QGuiApplication>
 #include <QHash>
@@ -11,9 +12,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalSocket>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QThread>
+#include <csignal>
 
 // One per profile: a throwaway data dir (shots, engine checks) never meets the real browser's socket.
 QString Instance::socketPath(const QString &dataDir, const QString &kind) {
@@ -35,6 +38,33 @@ Instance::Instance(const QString &dataDir, QObject *parent)
     });
 }
 
+// The pid in the lock of a browser that has not answered, if that process runs this very executable (Chromium's
+// IsChromeProcess check, process_singleton_posix.cc): a lock left by something else is never a reason to kill it.
+// /proc/<pid>/exe of a binary replaced by an update reads "<path> (deleted)". SIGTERM, 3 s to go, then SIGKILL.
+static bool endHolder(QLockFile &lock) {
+    qint64 pid = 0;
+    QString host, app;
+    if (!lock.getLockInfo(&pid, &host, &app) || pid <= 1 || pid == QCoreApplication::applicationPid())
+        return false;
+    const QString link = QStringLiteral("/proc/%1/exe").arg(pid);
+    QString exe = QFile::symLinkTarget(link);
+    if (exe.endsWith(u" (deleted)"))
+        exe.chop(10);
+    if (exe.isEmpty() || exe != QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath())
+        return false;
+    // a zombie keeps its pid but has no exe
+    const auto gone = [&link] { return QFile::symLinkTarget(link).isEmpty(); };
+    ::kill(pid_t(pid), SIGTERM);
+    for (QDeadlineTimer deadline(3000); !gone() && !deadline.hasExpired();)
+        QThread::msleep(50);
+    if (!gone()) {
+        ::kill(pid_t(pid), SIGKILL);
+        for (QDeadlineTimer deadline(1000); !gone() && !deadline.hasExpired();)
+            QThread::msleep(50);
+    }
+    return gone();
+}
+
 int Instance::start(const QUrl &url, const QString &from, const QString &context) {
     QJsonObject message{{QStringLiteral("url"), url.toString(QUrl::FullyEncoded)}, {QStringLiteral("from"), from},
                         {QStringLiteral("context"), context}};
@@ -52,16 +82,25 @@ int Instance::start(const QUrl &url, const QString &from, const QString &context
             QLocalServer::removeServer(m_path);
             return m_server.listen(m_path) ? Listening : Failed;
         }
-        switch (handOver(line)) {
-        case Taken:
+        const HandOver result = handOver(line);
+        if (result == Taken)
             return HandedOff;
-        case Held:
-            return Queued;
-        case Refused:
-            break;
+        if (result == Held || deadline.hasExpired()) {
+            // The browser holds the profile and does not answer (2026-10-24: hung, and a new start did nothing). As
+            // Chromium's second process does, end it and start normally; this process opens the link it was given.
+            if (endHolder(*m_lock)) {
+                if (!m_lock->tryLock(0)) {
+                    m_lock->removeStaleLockFile();
+                    m_lock->tryLock(0);
+                }
+                QLocalServer::removeServer(m_path);
+                QProcess::startDetached(QStringLiteral("qs"), {QStringLiteral("-c"), QStringLiteral("tacit"), QStringLiteral("ipc"),
+                                                              QStringLiteral("call"), QStringLiteral("island"), QStringLiteral("note"),
+                                                              QStringLiteral("error"), QStringLiteral("Thyris wasn't answering · restarted")});
+                return m_server.listen(m_path) ? Listening : Failed;
+            }
+            return result == Held ? Queued : NoAnswer;
         }
-        if (deadline.hasExpired())
-            return NoAnswer;
         QThread::msleep(100);
     }
 }
@@ -74,7 +113,7 @@ bool Instance::running() {
     return m_lock->error() == QLockFile::LockFailedError;
 }
 
-// Taken once the running browser answers "ok"; Held while it keeps the connection open with no answer for 5 s (the
+// Taken once the running browser answers "ok"; Held while it keeps the connection open with no answer for 4 s (the
 // line waits in its socket); Refused when nothing listens or the connection closes unanswered.
 Instance::HandOver Instance::handOver(const QByteArray &line) const {
     QLocalSocket socket;
@@ -83,7 +122,7 @@ Instance::HandOver Instance::handOver(const QByteArray &line) const {
         return Refused;
     socket.write(line);
     socket.waitForBytesWritten(1000);
-    for (QDeadlineTimer answer(5000); !socket.canReadLine() && !answer.hasExpired();)
+    for (QDeadlineTimer answer(4000); !socket.canReadLine() && !answer.hasExpired();)
         if (!socket.waitForReadyRead(int(answer.remainingTime())))
             break;
     if (socket.canReadLine())

@@ -1949,9 +1949,61 @@ public:
             emitLoad(loadInfo(2, QUrl(QString::fromStdString(browser->GetMainFrame()->GetURL().ToString()))));
         }
     }
+    // The page's process stopped answering (a script that never ends, a hung renderer). Returning true keeps Chromium's own
+    // "page unresponsive" prompt away; the page says it itself, and its Wait or Reload comes back through waitForPage and
+    // endAndReload. Chromium asks again if the page stays stuck.
+    bool OnRenderProcessUnresponsive(CefRefPtr<CefBrowser>, CefRefPtr<CefUnresponsiveProcessCallback> callback) override {
+        {
+            QMutexLocker lock(&m_lock);
+            m_hung = callback;
+        }
+        toItem([](PageItem *item) { item->setUnresponsive(true); });
+        return true;
+    }
+    void OnRenderProcessResponsive(CefRefPtr<CefBrowser>) override {
+        {
+            QMutexLocker lock(&m_lock);
+            m_hung = nullptr;
+        }
+        toItem([](PageItem *item) { item->setUnresponsive(false); });
+    }
+    // Wait: the page gets more time. Both calls go to CEF's UI thread, the thread the callback belongs to.
+    void waitForPage() {
+        CefRefPtr<CefUnresponsiveProcessCallback> hung;
+        {
+            QMutexLocker lock(&m_lock);
+            hung = std::move(m_hung);
+        }
+        toItem([](PageItem *item) { item->setUnresponsive(false); });
+        if (hung)
+            CefPostTask(TID_UI, base::BindOnce([](CefRefPtr<CefUnresponsiveProcessCallback> c) { c->Wait(); }, hung));
+    }
+    // Reload: the process ends, and OnRenderProcessTerminated reloads the page once it is gone.
+    void endAndReload() {
+        CefRefPtr<CefUnresponsiveProcessCallback> hung;
+        {
+            QMutexLocker lock(&m_lock);
+            hung = std::move(m_hung);
+            m_reloadOnEnd = hung != nullptr;
+        }
+        if (hung)
+            CefPostTask(TID_UI, base::BindOnce([](CefRefPtr<CefUnresponsiveProcessCallback> c) { c->Terminate(); }, hung));
+    }
     // The page's process ended (a crash, the memory killer, a kill). Chromium keeps the page and makes a new process on
     // the next load; Opsis puts its failure page over the last frame, which otherwise stays on screen and answers nothing.
-    void OnRenderProcessTerminated(CefRefPtr<CefBrowser>, TerminationStatus status, int code, const CefString &) override {
+    void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser, TerminationStatus status, int code, const CefString &) override {
+        bool reload;
+        {
+            QMutexLocker lock(&m_lock);
+            reload = std::exchange(m_reloadOnEnd, false);
+            m_hung = nullptr;
+        }
+        toItem([](PageItem *item) { item->setUnresponsive(false); });
+        // ended by the page's own Reload: no stopped-process page, the page loads again in a new process
+        if (reload) {
+            browser->Reload();
+            return;
+        }
         const int qt = status == TS_PROCESS_WAS_KILLED || status == TS_PROCESS_OOM ? 3 : status == TS_PROCESS_CRASHED ? 2 : 1;
         if (traced)
             std::fprintf(stderr, "cef trace: page %p process ended, status %d, code %d\n", static_cast<void *>(this), int(status), code);
@@ -2354,6 +2406,9 @@ private:
     // the native route's scripts and their version, under m_lock
     QList<ScriptSpec> m_scripts;
     int m_scriptsGeneration = 0;
+
+    CefRefPtr<CefUnresponsiveProcessCallback> m_hung;   // the stuck process's callback, under m_lock
+    bool m_reloadOnEnd = false;                         // the next end of the page's process is Reload's, under m_lock
 
     IMPLEMENT_REFCOUNTING(PageClient);
 };
@@ -3351,6 +3406,21 @@ void PageItem::reloadAndBypassCache() {
         page->ReloadIgnoreCache();
 }
 
+void PageItem::setUnresponsive(bool on) {
+    if (std::exchange(m_unresponsive, on) != on)
+        emit unresponsiveChanged();
+}
+
+void PageItem::waitForPage() {
+    if (m_client)
+        m_client->waitForPage();
+}
+
+void PageItem::endAndReload() {
+    if (m_client)
+        m_client->endAndReload();
+}
+
 void PageItem::stop() {
     if (CefRefPtr<CefBrowser> page = m_client ? m_client->browser() : nullptr)
         page->StopLoad();
@@ -3481,6 +3551,7 @@ void PageItem::setLifecycleState(int state) {
             m_renderPid = 0;
             emit renderProcessPidChanged();
         }
+        setUnresponsive(false);
         if (std::exchange(m_loading, false))
             emit loadingChanged({{QStringLiteral("status"), 1}, {QStringLiteral("url"), m_url}});
         update();
