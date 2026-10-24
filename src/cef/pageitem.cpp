@@ -837,15 +837,21 @@ public:
     // GUI thread
     void resize(QSize size, qreal scale, QPoint origin) {
         CefRefPtr<CefBrowser> browser;
+        bool rescaled;
         {
             QMutexLocker lock(&m_lock);
             m_size = size;
+            rescaled = m_scale != scale;
             m_scale = scale;
             m_origin = origin;
             browser = m_browser;
         }
-        if (browser)
-            browser->GetHost()->WasResized();
+        if (!browser)
+            return;
+        // a new scale is new screen info: without it the engine kept drawing at the old scale (GetScreenInfo)
+        if (rescaled)
+            browser->GetHost()->NotifyScreenInfoChanged();
+        browser->GetHost()->WasResized();
     }
     // DevTools (PageItem::setDevToolsView, DevToolsBridge): the relay's messages into the page's DevTools session, and
     // what comes back that is the front end's (answers past DevToolsBridge::frontEnd, every event) out to it
@@ -3399,6 +3405,16 @@ void PageItem::itemChange(ItemChange change, const ItemChangeData &data) {
         if (!ownBeat)
             connect(data.window, &QQuickWindow::frameSwapped, this, &PageItem::windowBeat, Qt::UniqueConnection);
         open();
+    } else if (change == ItemDevicePixelRatioHasChanged && m_client) {
+        // A screen's scale changed in Settings: Hyprland resizes the window first and the new ratio comes after, so the
+        // size alone left the page drawn at the old scale, in the top left 1/scale of its window (Discord 2026-10-24,
+        // Tamrawii, 100 % to 125 %)
+        m_client->resize(size().toSize(), window() ? window()->effectiveDevicePixelRatio() : data.realValue,
+                         mapToGlobal(QPointF()).toPoint());
+        busy();
+        beginFrame();
+        m_refreshes = 2;
+        m_refresh.start(60);
     } else if (change == ItemVisibleHasChanged && m_client) {
         if (traced && data.boolValue) {
             m_traceShow = nowNs();
