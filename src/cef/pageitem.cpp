@@ -849,6 +849,9 @@ public:
         if (!browser)
             return;
         // a new scale is new screen info: without it the engine kept drawing at the old scale (GetScreenInfo)
+        if (traced)
+            std::fprintf(stderr, "cef trace: page resized to %dx%d at scale %.2f%s\n", size.width(), size.height(), scale,
+                         rescaled ? " (new screen info)" : "");
         if (rescaled)
             browser->GetHost()->NotifyScreenInfoChanged();
         browser->GetHost()->WasResized();
@@ -1869,6 +1872,8 @@ public:
     }
     bool GetScreenInfo(CefRefPtr<CefBrowser>, CefScreenInfo &info) override {
         QMutexLocker lock(&m_lock);
+        if (traced)
+            std::fprintf(stderr, "cef trace: engine asked for screen info: scale %.2f\n", m_scale);
         info.device_scale_factor = float(m_scale);
         info.rect = info.available_rect = {0, 0, qMax(1, m_size.width()), qMax(1, m_size.height())};
         return true;
@@ -3406,6 +3411,9 @@ void PageItem::itemChange(ItemChange change, const ItemChangeData &data) {
             connect(data.window, &QQuickWindow::frameSwapped, this, &PageItem::windowBeat, Qt::UniqueConnection);
         open();
     } else if (change == ItemDevicePixelRatioHasChanged && m_client) {
+        if (traced)
+            std::fprintf(stderr, "cef trace: pixel ratio changed to %.2f (window %.2f)\n", data.realValue,
+                         window() ? window()->effectiveDevicePixelRatio() : 0.0);
         // A screen's scale changed in Settings: Hyprland resizes the window first and the new ratio comes after, so the
         // size alone left the page drawn at the old scale, in the top left 1/scale of its window (Discord 2026-10-24,
         // Tamrawii, 100 % to 125 %)

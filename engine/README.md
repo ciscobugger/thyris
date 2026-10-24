@@ -7,7 +7,9 @@ book4-edge/opsis-cef-port-plan.md (outside this repo).
 
 - `patches/`: Tacit's changes to Chromium and CEF. Text rendering (Skia, A8), touchpad wheel phases, off-screen
   capture pacing, Opsis's script world, navigation (history offsets, replacing an entry), Manifest V2 (kept, not in
-  the shipping build), and `history-patch.py` (a page's history carried between views; applied by `pgo-history.sh`).
+  the shipping build), `history-patch.py` (a page's history carried between views; applied by `pgo-history.sh`), and `scale-patch.py`
+  (an off-screen page keeps the scale Thyris gives it on Wayland, where Chromium put 1 in its place; applied by
+  `build/run-scale.sh`, 2026-10-24).
 - `build/`: the cloud builds. The shipping engine is `pgo-wheelend.sh`'s: Opsis's own PGO profile, libcef on ThinLTO's
   optimising link, relocations kept for BOLT, the history patch and `wheelend-patch.py` (a touchpad gesture's End
   reaches Chromium), and no `-mtune=oryon-1`: `pgo-noryon.sh` took it out after it made the GPU process's page raster
