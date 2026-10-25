@@ -847,8 +847,9 @@ Window {
         }
     }
 
-    // Folded (PLAN.md 3.5): a 16 px zone at the window's left edge opens the rail over the page, at once
-    // when the pointer heads left into it, else after 40 ms; it leaves 260 ms after the pointer does. A
+    // Folded (PLAN.md 3.5): a 24 px zone at the window's left edge opens the rail over the page, at once
+    // when the pointer heads left into it, else after 40 ms; it leaves 450 ms after the pointer is neither on it nor
+    // within 48 px of its right edge. A
     // flick out of the window across its left side to the screen's edge opens it at once and holds it while
     // the cursor rests at the edge, until the pointer comes back or the window resizes (1.5 s where Hyprland
     // cannot say where the cursor is). Nothing opens it while a mouse button is held. Find, the site panel and
@@ -860,7 +861,7 @@ Window {
         property bool flung: false      // opened by a flick out across the left side; the pointer is away
         property bool kept: false       // lifted under the resting pointer, until it moves from `keptAt`
         property point keptAt
-        readonly property bool hovered: kept || pointer.inZone && !pointer.held || peekHover.hovered || peekRail.busy || flung
+        readonly property bool hovered: kept || (pointer.inZone || pointer.nearRail) && !pointer.held || peekHover.hovered || peekRail.busy || flung
         // held out by find, the site panel, Earlier, or the card's "Save password?" line (the other asks have their own
         // sheet over the page); not under an edit grown from the handle, where that line waits on the card's last line
         readonly property bool held: !root.railPinned && !root.pageFullScreen
@@ -880,7 +881,7 @@ Window {
             else { slideIn.stop(); slideOut.restart() }
         }
         Timer { id: openTimer; interval: 40; onTriggered: peek.open = true }
-        Timer { id: closeTimer; interval: 260; onTriggered: { peek.open = false; if (!peek.out && (peekRail.listFocused || peekRail.fillFocused)) root.focusPage() } }
+        Timer { id: closeTimer; interval: 450; onTriggered: { peek.open = false; if (!peek.out && (peekRail.listFocused || peekRail.fillFocused)) root.focusPage() } }
         Timer { id: flingTimer; interval: 1500; onTriggered: peek.flung = false }
         // flung: where the cursor is, every 100 ms (onCursorAnswered holds or drops it)
         Timer { id: flingPoll; interval: 100; repeat: true; running: peek.flung && !reask.running; onTriggered: root.askCursor() }
@@ -922,6 +923,9 @@ Window {
         fill: root.railFill
         readonly property real restX: root.inset * (1 + root.railLift)
         x: restX - (1 - slide) * (width + 12)
+        // while it slides it moves as one picture: drawn per frame, every tab's own layer (the unlit ones' muted
+        // copies) and the shadow cost frames on a full rail
+        layer.enabled: slide > 0 && slide < 1
         y: root.inset * (1 + root.railLift)
         width: root.railWidth - root.inset * (2 + root.railLift)
         height: parent.height - 2 * y
@@ -975,7 +979,7 @@ Window {
             pointer.lastY = y;
             pointer.known = true;
             // heading out into the zone: at once; a way in or along the edge waits the 40 ms
-            if (x < 16 && pointer.leftward && !peek.open)
+            if (x < pointer.zone && pointer.leftward && !peek.open)
                 peek.open = true;
         }
         onHoveredChanged: {
@@ -1056,8 +1060,13 @@ Window {
         anchors.fill: parent
         z: 100
         enabled: !root.railPinned && !root.pageFullScreen
-        // the hover zone: the page's first 16 px
-        readonly property bool inZone: windowPointer.hovered && windowPointer.point.position.x < 16
+        // the hover zone: the page's first 24 px (16 was easy to miss, owner 2026-10-25)
+        readonly property int zone: 24
+        readonly property bool inZone: windowPointer.hovered && windowPointer.point.position.x < zone
+        // out, the rail stays while the pointer is on it or within 48 px of its right edge: a reach for a tab that
+        // overshoots its side, or a hand drifting off it, does not tuck it away
+        readonly property bool nearRail: peek.out && windowPointer.hovered
+            && windowPointer.point.position.x < peekRail.x + peekRail.width + 48
         readonly property bool held: press.active
         // the last hover position; unknown after a leave and from a press until the next hover move, since
         // no hover moves arrive while the page holds the grab
