@@ -47,6 +47,8 @@ public:
     // a touchpad's two-finger scroll at (x, y): Begin, `steps` Updates of dy/steps px `stepMs` apart (by the events'
     // timestamps), End, as Hyprland sends it (no momentum phase)
     Q_INVOKABLE void swipe(qreal x, qreal y, int dy, int steps, int stepMs, int dx = 0);
+    // one notch of a mouse wheel: angle delta only, no pixels, no phase
+    Q_INVOKABLE void wheel(qreal x, qreal y, int angleDy);
     // The mouse leaves the window.
     Q_INVOKABLE void leave();
     // The file at `path` dragged in from another app and dropped at `x`, `y`.

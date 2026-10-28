@@ -4248,6 +4248,21 @@ QtObject {
           act: () => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.swipe(c.x, c.y, -240, 2, 200) },
           expect: () => true, page: "scrollY", pageExpect: v => { check.glideAt = v; probe.report("     " + v); return v > 0 } },
         { name: "(still there)", wait: 800, expect: () => true, page: "scrollY", pageExpect: v => v === check.glideAt },
+        // Mouse wheel notches animate, a touchpad's steps do not (2026-10-28, Hadi's smooth scrolling): a sampler notes every
+        // scrollY the page draws
+        { name: "(back to the top, a sampler of the scroll positions drawn)", wait: 700,
+          act: () => view.runJavaScript("scrollTo(0, 0); window.__s = new Set(); (function f() { __s.add(scrollY); requestAnimationFrame(f) })()"),
+          expect: () => true, page: "scrollY", pageExpect: v => v === 0 },
+        { name: "a wheel notch glides to its place through several positions", wait: 900,
+          act: () => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.pointer(c.x, c.y); probe.wheel(c.x, c.y, -120) },
+          expect: () => true, page: "JSON.stringify([scrollY, __s.size])",
+          pageExpect: v => { const r = JSON.parse(v); probe.report("     at " + r[0] + ", " + r[1] + " positions"); return r[0] > 0 && r[1] >= 4 } },
+        { name: "(back to the top, the sampler cleared)", wait: 700,
+          act: () => view.runJavaScript("scrollTo(0, 0); __s.clear()"), expect: () => true, page: "scrollY", pageExpect: v => v === 0 },
+        { name: "a touchpad's three slow steps arrive at once each: no positions between", wait: 1200,
+          act: () => { const c = view.mapToItem(app.contentItem, view.width / 2, view.height / 2); probe.swipe(c.x, c.y, -90, 3, 250) },
+          expect: () => true, page: "JSON.stringify([scrollY, __s.size])",
+          pageExpect: v => { const r = JSON.parse(v); probe.report("     at " + r[0] + ", " + r[1] + " positions"); return r[0] > 0 && r[1] <= 5 } },
         // A gesture's End reaches the engine (2026-10-11: CEF dropped it, having no movement; Chromium kept the first
         // gesture going and scrolled what it had latched first, so a pane WhatsApp swapped in for a chat never scrolled)
         { name: "(a scrolling pane over the page, as a chat's)", wait: 500,

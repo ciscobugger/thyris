@@ -31,12 +31,12 @@ public:
     void OnBeforeCommandLineProcessing(const CefString &process, CefRefPtr<CefCommandLine> line) override {
         if (!process.empty())
             return;
-        // No scroll animation, as Qt WebEngine (its ScrollAnimatorEnabled follows --enable-smooth-scrolling, off unless
-        // given): animated, a touchpad's steps lagged its fingers and the page turned late (2026-10-08, the owner's hand
-        // replayed: 72-83 % of it moved, turns 9-68 ms; with this 100 %, 3-4 ms, as Qt WebEngine). --enable-smooth-scrolling
-        // in the switches brings it back.
-        if (!m_switches.contains(QStringLiteral("--enable-smooth-scrolling")))
-            line->AppendSwitch("disable-smooth-scrolling");
+        // A mouse wheel notch scrolls with Chromium's animation (the owner, 2026-10-25, Hadi's request). Chromium's own default
+        // is off in this build, so it is asked for. A touchpad's steps are not animated: PageItem::wheelEvent marks them
+        // precise (EVENTFLAG_PRECISION_SCROLLING_DELTA) and Chromium scrolls by those as they come (2026-10-08: animated,
+        // the touchpad's steps lagged its fingers). --disable-smooth-scrolling in the switches turns the animation off.
+        if (!m_switches.contains(QStringLiteral("--disable-smooth-scrolling")))
+            line->AppendSwitch("enable-smooth-scrolling");
         // No back-forward cache for now: a page Back or Forward brings back from it reports no load (no OnLoadStart or
         // OnLoadEnd), and Opsis, waiting for one, kept a refused certificate's page over the page Go back had reached
         // (2026-10-09). Telling those loads would keep the quick Back; until then BackForwardCache in --enable-features in

@@ -119,6 +119,13 @@ void EngineCheck::swipe(qreal x, qreal y, int dy, int steps, int stepMs, int dx)
     QWindowSystemInterface::flushWindowSystemEvents();
 }
 
+void EngineCheck::wheel(qreal x, qreal y, int angleDy) {
+    QWindow *window = target();
+    const QPointF local(x, y);
+    QWindowSystemInterface::handleWheelEvent(window, local, window->mapToGlobal(local), QPoint(), QPoint(0, angleDy), Qt::NoModifier);
+    QWindowSystemInterface::flushWindowSystemEvents();
+}
+
 void EngineCheck::leave() {
     QWindowSystemInterface::handleLeaveEvent<QWindowSystemInterface::SynchronousDelivery>(target());
     m_inside = false;
