@@ -19,7 +19,7 @@ TestCase {
         return Object.assign({
             engine: "duckduckgo", defaultBrowser: "yes", folder: "/home/abdul/Downloads", home: "/home/abdul", zoom: 1,
             fonts: { standard: "Noto Serif", serif: "Noto Serif", sansSerif: "Noto Sans", fixed: "Noto Sans Mono", size: 16 }, minimumFont: 0,
-            languages: ["en-GB"], spellCheck: false, dictionaries: { "en-GB": "" }, allowed: ["https://lwn.net"],
+            languages: ["en-GB"], spellCheck: false, dictionaries: { "en-GB": "" }, allowed: ["https://lwn.net"], siteChoices: [],
             lists: [{ file: "ubo-filters", modified: new Date(2026, 8, 29, 6, 10).getTime(), version: "2026.928.1504" },
                     { file: "ubo-privacy", modified: 0, version: "1" }, { file: "easylist", modified: 0, version: "202609290512" }],
             updating: false, listFailure: null, thirdPartyCookies: "allow", httpsFirst: "on", cookies: 3, clearing: null, extensions: [],

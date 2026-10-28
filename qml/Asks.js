@@ -150,7 +150,7 @@ function view(a, pageHost) {
     case "signin":
     case "proxy":
         out.lines = [{ text: a.kind === "proxy" ? "Sign in to the proxy " + a.host : "Sign in to " + a.host }];
-        out.fields = [{ key: "user", label: "User", secret: false }, { key: "password", label: "Pass", secret: true }];
+        out.fields = [{ key: "user", label: "User", secret: false }, { key: "password", label: "Password", secret: true }];
         if (a.kind === "signin" && !a.secure)
             out.notes = ["Sent without encryption"];
         out.buttons = [button("Sign in", "signin"), button("Cancel", "cancel")];

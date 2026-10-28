@@ -84,7 +84,7 @@ TestCase {
         return {
             engine: "duckduckgo", defaultBrowser: "yes", folder: "/home/abdul/Downloads", home: "/home/abdul", zoom: 1,
             fonts: { standard: "Noto Serif", size: 16 }, minimumFont: 0, languages: ["en-GB"], spellCheck: false, dictionaries: {},
-            allowed: [], lists: [], updating: false, listFailure: null, thirdPartyCookies: "allow",
+            allowed: [], siteChoices: [], lists: [], updating: false, listFailure: null, thirdPartyCookies: "allow",
             httpsFirst: "on", cookies: 0, clearing: null, extensions: [], versions: {}, now: Date.now(),
             passwords: Object.assign({ state: "ready", entries: entries, removing: {}, revealed: {} }, passwords ?? {}),
         };

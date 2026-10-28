@@ -76,7 +76,8 @@ TestCase {
         const p = failed({ url: "http://127.0.0.1:8080/x", code: -102, name: "net::ERR_CONNECTION_REFUSED" });
         compare(p.kind, "connection");
         compare(p.title, "Can't reach 127.0.0.1:8080");
-        compare(p.body, []);
+        compare(p.body, ["The site refused the connection."]);
+        compare(failed({ url: "http://127.0.0.1:8080/x", code: -999 }).body, [], "an unknown code claims nothing");
     }
     function test_chromiumsHttpErrorsAreFailures() {
         const p = failed({ url: "https://github.com/x", code: -310, domain: "http", name: "net::ERR_TOO_MANY_REDIRECTS" });
@@ -155,22 +156,22 @@ TestCase {
         const p = Failures.crash({ url: "https://www.youtube.com/watch?v=x", at: at, pid: 48211, how: "killed", code: 0,
                                    memory: { bytes: 1.1 * 1073741824, at: new Date(2026, 8, 24, 14, 31).getTime() },
                                    stop: { source: "systemd-oomd", at: new Date(2026, 8, 24, 14, 31).getTime() }, siblings: 2 });
-        compare(p.title, "This page's process was stopped");
+        compare(p.title, "This page was stopped");
         compare(p.body, ["youtube.com was using about 1.1 GB (measured 14:31). The system stopped it because memory ran low. "
-                         + "Two other pages shared its process. They are unloaded and load again when you open them."]);
+                         + "Two other pages were running with it. They are unloaded and load again when you open them."]);
         compare(p.actions.map(a => a.label), ["Reload"]);
         compare(p.details, ["killed · pid 48211 · journal: systemd-oomd, 14:31"]);
     }
     function test_crashSaysOnlyWhatWasMeasured() {
         const p = Failures.crash({ url: "https://www.youtube.com/", at: at, pid: 7, how: "killed", code: 0, memory: null, stop: null, siblings: 1 });
-        compare(p.body, ["One other page shared its process. It is unloaded and loads again when you open it."], "no size, no cause");
+        compare(p.body, ["One other page was running with it. It is unloaded and loads again when you open it."], "no size, no cause");
         compare(p.details, ["killed · pid 7"]);
         compare(Failures.crash({ url: "https://a.org/", at: at, pid: 7, how: "killed", siblings: 0 }).body, []);
     }
     function test_crashWording() {
         compare(Failures.crash({ url: "https://a.org/", at: at, pid: 7, how: "crashed", siblings: 0 }).title, "This page crashed");
         const exited = Failures.crash({ url: "https://a.org/", at: at, pid: 7, how: "exited", code: 250, siblings: 0, twice: true });
-        compare(exited.title, "The page's process exited with code 250");
+        compare(exited.title, "This page stopped unexpectedly");
         compare(exited.body, ["It stopped twice in 10 minutes."]);
         compare(exited.details, ["exited with code 250 · pid 7"]);
         verify(exited.twice);

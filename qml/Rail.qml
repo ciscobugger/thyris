@@ -1267,6 +1267,18 @@ Item {
         }
     }
 
+    // Earlier's list with no rows: nothing yet, or nothing for the filter
+    Label {
+        visible: rail.inEarlier && rowModel.count === 0
+        anchors { left: parent.left; right: parent.right; leftMargin: 18; rightMargin: 16; top: list.top; topMargin: 12 }
+        text: rail.earlier.filter !== "" ? "Nothing here matches that."
+            : rail.earlier.view === "history" ? "Pages you visit show here."
+            : rail.earlier.view === "saved" ? "Pages you save with Ctrl+D show here." : "Files you download show here."
+        wrapMode: Text.Wrap
+        font.pixelSize: Theme.font.tiny
+        color: Theme.colSubtext
+    }
+
     ListView {
         id: list
         anchors { top: rail.inEarlier ? earlierHead.bottom : newRow.bottom; topMargin: 2; left: parent.left; right: parent.right; bottom: alwaysRow.visible ? alwaysRow.top : foot.top; bottomMargin: 4 }

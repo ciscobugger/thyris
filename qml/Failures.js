@@ -84,8 +84,12 @@ function load(f) {
                                           actions: actions.concat([{ label: "Search", action: "search" }]), near: near,
                                           search: name }));
     }
-    return page(Object.assign(base, { kind: "connection", title: "Can't reach " + host }));
+    return page(Object.assign(base, { kind: "connection", title: "Can't reach " + host, body: connectionBody[f.code] ? [connectionBody[f.code]] : [] }));
 }
+// What Chromium's net error says in a sentence, for the codes that mean one thing; the code stays in Details.
+var connectionBody = { "-101": "The site closed the connection.", "-102": "The site refused the connection.", "-104": "The connection could not be made.",
+                       "-109": "This address can't be reached from here.", "-310": "The site keeps sending this page to another address.",
+                       "-324": "The site closed the connection without sending anything." };
 
 // Chromium's names for WebEngineCertificateError.type, for Details.
 var certificateCodes = {
@@ -173,17 +177,17 @@ function twice(stops, now) {
 // siblings (other pages that shared the process), twice }.
 function crash(c) {
     const host = PageState.pageHost(c.url) || "The page";
-    const title = c.how === "killed" ? "This page's process was stopped" : c.how === "crashed" ? "This page crashed"
-                : "The page's process exited with code " + c.code;
+    const title = c.how === "killed" ? "This page was stopped" : c.how === "crashed" ? "This page crashed"
+                : "This page stopped unexpectedly";
     const said = [];
     if (c.memory)
         said.push(host + " was using about " + size(c.memory.bytes) + " (measured " + clock(c.memory.at) + ").");
     if (c.how === "killed" && c.stop)
         said.push("The system stopped it because memory ran low.");
     if (c.siblings === 1)
-        said.push("One other page shared its process. It is unloaded and loads again when you open it.");
+        said.push("One other page was running with it. It is unloaded and loads again when you open it.");
     else if (c.siblings > 1)
-        said.push((numbers[c.siblings] ?? String(c.siblings)) + " other pages shared its process. They are unloaded and load again when you open them.");
+        said.push((numbers[c.siblings] ?? String(c.siblings)) + " other pages were running with it. They are unloaded and load again when you open them.");
     if (c.twice)
         said.push("It stopped twice in 10 minutes.");
     const how = c.how === "exited" ? "exited with code " + c.code : c.how;

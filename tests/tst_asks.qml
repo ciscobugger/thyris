@@ -92,7 +92,7 @@ TestCase {
             { tag: "an embed names itself", ask: permission(1, "https://zoom.us", ["camera"]), page: "example.com",
               lines: ["zoom.us wants to use your camera"] },
             { tag: "sign-in over http", ask: signin, lines: ["Sign in to router.lan"], notes: ["Sent without encryption"],
-              buttons: ["Sign in", "Cancel"], fields: ["User", "Pass"], submit: "signin" },
+              buttons: ["Sign in", "Cancel"], fields: ["User", "Password"], submit: "signin" },
             { tag: "sign-in over https", ask: Object.assign({}, signin, { secure: true }), notes: [] },
             { tag: "proxy names the proxy", ask: { kind: "proxy", host: "proxy.lokal:3128", secure: false },
               lines: ["Sign in to the proxy proxy.lokal:3128"], notes: [] },
