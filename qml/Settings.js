@@ -25,7 +25,7 @@ function searchUrl(key, words) {
 // What the browser does with nothing set: what it did before it had a Settings page.
 var defaults = {
     engine: "duckduckgo", folder: "", zoom: 1, fonts: {}, minimumFont: 0, languages: [], spellCheck: false,
-    thirdPartyCookies: "allow", httpsFirst: "on", listFailure: null, listUpdated: 0, zenImport: null, zenFailure: null, zenCookies: true, zenTabs: true,
+    thirdPartyCookies: "allow", httpsFirst: "on", listFailure: null, listUpdated: 0, zenImport: null, zenFailure: null, zenCookies: true, zenTabs: true, tabs: "side",
 };
 
 // The sections in the order of PLAN.md 3.15's frame: Search, Start and windows, Downloads, Ad blocking, "then Pages,
@@ -150,6 +150,7 @@ function choices(key) {
     case "spellCheck": return [{ value: false, label: "Off" }, { value: true, label: "On" }];
     case "thirdPartyCookies": return [{ value: "allow", label: "Allow" }, { value: "block", label: "Block" }];
     case "httpsFirst": return [{ value: "on", label: "On" }, { value: "off", label: "Off" }];
+    case "tabs": return [{ value: "side", label: "Along the side" }, { value: "top", label: "Along the top" }];
     case "zenCookies": case "zenTabs": return [{ value: false, label: "Off" }, { value: true, label: "On" }];
     }
     // an extension's row
@@ -163,6 +164,7 @@ function value(key, v) {
     case "spellCheck": case "zenCookies": case "zenTabs": return v ? "On" : "Off";
     case "thirdPartyCookies": return v === "block" ? "Blocked" : "Allowed";
     case "httpsFirst": return v === "off" ? "Off" : "On";
+    case "tabs": return v === "top" ? "Along the top" : "Along the side";
     }
     if (key.indexOf("ext:") === 0)
         return v === "on" ? "On" : v === "off" ? "Off" : v;
@@ -402,7 +404,7 @@ var keys = [
 // allowed), "clear" (Clear browsing data) and "passwords" (Saved passwords). `s` holds what they show:
 //   engine, defaultBrowser ("yes", "no", "" unknown), folder, home, zoom, fonts (the families and sizes in use),
 //   minimumFont, languages, spellCheck, dictionaries ({ language: "ready" | "hunspell" | "" }), allowed (origins), lists,
-//   updating, listFailure ({ at, text } or null), thirdPartyCookies, httpsFirst,
+//   updating, listFailure ({ at, text } or null), thirdPartyCookies, httpsFirst, tabs ("side" or "top"),
 //   cookies (every site's count), clearing ({ what, left } or null), extensions ([{ id, name, enabled, error }]),
 //   passwords ({ state (Passwords': "", "ready", "none"), entries ([{ id, origin, user }]), removing ({ id: seconds
 //   left }), revealed ({ id: { secret } or { failure } }) }), zen (Import's, as importRows takes it), versions, now.
@@ -495,6 +497,7 @@ function rows(s, sub, filter) {
     ]));
     const missing = s.spellCheck ? s.languages.filter(l => s.dictionaries[l] !== "ready" && s.dictionaries[l] !== "hunspell") : [];
     section("pages", [
+        choice("tabs", "Tabs", s.tabs),
         { kind: "step", key: "zoom", label: "Default zoom", value: Site.zoomText(s.zoom) },
         { kind: "link", key: "fonts", label: "Fonts", value: (s.fonts.standard ? s.fonts.standard + ", " : "") + px(s.fonts.size),
           words: "Fonts " + fontRows.map(f => f.label + " " + (s.fonts[f.key] || "")).join(" ") + " Font size" },

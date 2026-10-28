@@ -14,6 +14,8 @@ var defaults = {
     page: "", status: "", info: "", note: "", progress: -1, from: "",
     // a page from another app: "from foot · 14:31", a second line under its title (PLAN.md 3.6, 6b)
     origin: "",
+    // the tabs along the top: a page's task, a face's letter, a hairline before the tab
+    thread: "", letter: "", edge: false,
     // the one word at a row's right, whether it matters (the main ink, else the meta ink; never the accent, 2026-10-08)
     // and the glyph that says what it is about, so it reads without colour (PLAN.md 3.20)
     word: "", accent: false, wordGlyph: ""
@@ -243,6 +245,56 @@ function runs(pages, fold) {
     return out;
 }
 
+// A page's row, as the rail lists it
+function pageRowOf(p, depth, current, now) {
+    const w = pageWord(p, p.id === current, now);
+    return {
+        key: "p:" + p.id, type: "page", ref: p.id, title: p.title ? trimTitle(p.title, p.url) : untitled(p.url), icon: p.icon || "", glyph: card(p.url, "").glyph, depth: depth,
+        current: p.id === current, dim: p.state === "unloaded", audible: !!p.audible, muted: !!p.muted,
+        needsYou: !!p.needsYou, loading: !!p.loading, capturing: p.capturing || "", failed: p.failed || "",
+        origin: p.from ? "from " + p.from + " · " + when(p.fromAt || p.lastActive, now) : "", word: w.word, accent: w.accent, detail: w.detail,
+        wordGlyph: w.glyph || ""
+    };
+}
+
+// The tabs along the top (Settings > Tabs): the Always pages as faces, then every page of every open task in the rail's
+// order, whatever a task's fold; `edge` marks the first page of a task that sits beside one of several pages, where the
+// strip draws a hairline. Rows carry the rail's roles, so the same sync keeps them.
+function strip(session, options) {
+    const opts = options || {};
+    const now = opts.now || Date.now();
+    const current = session.currentPage;
+    const out = [];
+    if (!opts.offTheRecord) {
+        for (const id of session.always) {
+            const p = session.pages[id];
+            if (!p)
+                continue;
+            const r = pageRowOf(p, 0, current, now);
+            out.push(Object.assign(r, { key: "a:" + id, type: "pin", title: p.title ? p.title.replace(/^\(\d+\)\s+/, "") : named(p.url),
+                                        letter: (session.siteOf(p.url) || "?").charAt(0).toUpperCase(),
+                                        // the unread count a page puts in its title as "(N) ", on its face
+                                        count: Number((/^\((\d+)\)\s/.exec(p.title || "") || [0, 0])[1]) }));
+        }
+        // the pin used last while it is away from its start is a tab of its own, as the rail's page row under the faces
+        const away = session.awayPin();
+        if (away && session.pages[away])
+            out.push(Object.assign(pageRowOf(session.pages[away], 0, current, now), { key: "away:" + away, type: "away" }));
+    }
+    let before = 0;
+    for (const t of session.drawnThreads()) {
+        const pages = t.pages.map(id => session.pages[id]).filter(p => p);
+        pages.forEach((p, i) => {
+            const r = pageRowOf(p, 0, current, now);
+            r.thread = t.id;
+            r.edge = i === 0 && before > 0 && (before > 1 || pages.length > 1);
+            out.push(r);
+        });
+        before = pages.length;
+    }
+    return out;
+}
+
 // What the rail lists under New page and the Pinned faces (PLAN.md 3.20): this window's tasks in one order that a click
 // never changes. A task of two or more pages is one row (its newest page's icon, its name, its word or how many pages
 // it holds, an arrow), with its pages one step in under it while it is open; a task of one is its page's row. A task is
@@ -260,16 +312,7 @@ function build(session, options) {
         if (Downloads.place(d, session, now) === "page")
             (byPage[d.page] = byPage[d.page] || []).push(d);
     const out = [];
-    function pageRow(p, depth) {
-        const w = pageWord(p, p.id === current, now);
-        return {
-            key: "p:" + p.id, type: "page", ref: p.id, title: p.title ? trimTitle(p.title, p.url) : untitled(p.url), icon: p.icon || "", glyph: card(p.url, "").glyph, depth: depth,
-            current: p.id === current, dim: p.state === "unloaded", audible: !!p.audible, muted: !!p.muted,
-            needsYou: !!p.needsYou, loading: !!p.loading, capturing: p.capturing || "", failed: p.failed || "",
-            origin: p.from ? "from " + p.from + " · " + when(p.fromAt || p.lastActive, now) : "", word: w.word, accent: w.accent, detail: w.detail,
-            wordGlyph: w.glyph || ""
-        };
-    }
+    const pageRow = (p, depth) => pageRowOf(p, depth, current, now);
     // A page's downloads under it: one file row, or several as one summary row that lists them under it on a
     // click. A failure or a warning waits on you, so it always has a row of its own (PLAN.md 8d).
     function downloadRows(p, depth) {

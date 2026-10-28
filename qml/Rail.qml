@@ -17,6 +17,7 @@ Item {
     required property var omni
     property var view: null                 // the current page's WebEngineView
     property bool pinned: true
+    property bool tabsTop: false            // the tabs are along the top (TabStrip): nothing to pin, so no pin glyph
     property bool asksInSheet: false        // the page's ask is drawn in its sheet over the page (AskSheet), not the card
     readonly property real addressCardY: addressSlot.y    // where the card is, for the sheet to dock level with it
     property bool overlay: false            // lying over the page (folded: hovered, or held out by find, the site panel or an ask)
@@ -832,6 +833,7 @@ Item {
             spacing: 2
             IconButton {
                 id: fold
+                visible: !rail.tabsTop
                 glyph: rail.pinned ? "left_panel_close" : "left_panel_open"
                 onClicked: rail.togglePin()
             }

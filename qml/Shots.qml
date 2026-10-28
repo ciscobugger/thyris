@@ -18,6 +18,7 @@ QtObject {
     required property var peekedRail   // Main's rail inside the peek
     required property var newPageBar   // Main's newBar
     required property var rail         // Main's pinned rail
+    required property var tabStrip     // Main's TabStrip (tabs along the top)
     required property var addressCard  // Main's AddressEditor
     required property var pageScroll   // Main's PageScrollBar
     required property var failures     // Main's FailurePage
@@ -220,6 +221,16 @@ QtObject {
             zenShot({ sites: 214, tabs: 23, cookies: true, openTabs: false, last: { at: Date.now() - 600000, bookmarks: { added: 4, kept: 0 }, history: { added: 3855, kept: 0 },
                       passwords: { added: 5, kept: 0, skipped: "" }, cookies: { added: 1575, kept: 0, rejected: 2, skipped: 333 }, tabs: { added: 23, kept: 0 } } });
         },
+        // Settings > Tabs: the tabs along the top, the rail folded; the same with a task's tab held for a move, a tab's menu, and the choice in Settings
+        "tabs-top": () => { everyday(); topTabs(() => {}); },
+        "tabs-top-hover": () => { everyday(); topTabs(() => { tabStrip.hoverKey = "p:" + session.threads[0].pages[1]; }); },
+        "tabs-top-menu": () => { everyday(); topTabs(() => tabStrip.showMenu("p:" + session.threads[0].pages[1], false)); },
+        "tabs-top-drag": () => { everyday(); topTabs(() => { const it = tabStrip.listView.itemAtIndex(7); tabStrip.startDrag(session.threads[0].pages[0], 0); tabStrip.moveDrag(it.mapToItem(tabStrip, 2, 8).x); }); },
+        "tabs-top-keys": () => { everyday(); topTabs(() => tabStrip.focusList()); },
+        "tabs-top-many": () => { everyday(); topTabs(() => {}); for (let i = 0; i < 14; i++) { const id = session.addPage(session.threads[1].id, "https://example.org/many/" + i, ""); session.update(id, { title: "A page with a long title number " + i }); } },
+        "tabs-top-peek": () => { everyday(); topTabs(() => { hoverPeek.open = true }); },
+        "tabs-settings": () => { everyday(); settings("pages"); },
+        "tabs-settings-top": () => { everyday(); topTabs(() => {}); settings("pages"); },
         "folded": () => { everyday(); app.setFold(false); loading(0.6); },
         "folded-peek": () => { everyday(); app.setFold(false); hoverPeek.open = true; },
         // a row's tooltip over the peek's frost (the tip waits 600 ms, so the grab waits for it)
@@ -658,6 +669,11 @@ QtObject {
         welcome.phase = phase;
     }
 
+    // the tabs along the top; `then` runs once they are laid out, with the tip the shot's pointer opened closed
+    function topTabs(then) {
+        app.prefs.set("tabs", "top");
+        later(() => { tabStrip.hideTip(tabStrip.listView.itemAtIndex(0)); then() });
+    }
     function everyday() {
         seed();
         app.show("issue212");

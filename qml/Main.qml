@@ -82,6 +82,12 @@ Window {
     property var profile: null
     property var views: ({})            // pageId -> BrowserView, created the first time a page is shown
     property bool railPinned: true
+    // Settings > Tabs: along the top, the rail stays folded (its address card, find and the rest come out of the left edge)
+    // and the page lists its tabs in a row (TabStrip)
+    readonly property bool tabsTop: prefs.get("tabs") === "top"
+    readonly property int tabsHeight: 36
+    readonly property real tabsDrop: tabsTop && !pageFullScreen ? tabsHeight : 0
+    onTabsTopChanged: setFold(!tabsTop)
     property int railWidth: 300         // drag 248-420, double-click resets
     property string hoveredLink: ""
     readonly property bool noPage: sessionModel.currentPage === ""
@@ -103,6 +109,7 @@ Window {
     readonly property alias windowBar: newBar
     readonly property alias windowHover: peek
     readonly property alias windowOverlay: peekRail
+    readonly property alias windowTabs: tabStrip
     readonly property alias windowSite: siteInfo
     readonly property alias windowAddress: addressEditor
     readonly property alias windowNotch: notchAddress
@@ -498,9 +505,9 @@ Window {
     Item {
         id: pageArea
         x: root.pageFullScreen ? 0 : root.pageBeside ? root.railWidth : root.inset
-        y: root.pageFullScreen ? 0 : root.inset
+        y: root.pageFullScreen ? 0 : root.inset + root.tabsDrop
         width: parent.width - x - (root.pageFullScreen ? 0 : root.inset) - (root.devToolsShown && root.devToolsSide === "right" ? root.devToolsWidthShown + root.inset : 0)
-        height: parent.height - 2 * y - (root.devToolsShown && root.devToolsSide === "bottom" ? root.devToolsHeight + root.inset : 0)
+        height: parent.height - y - (root.pageFullScreen ? 0 : root.inset) - (root.devToolsShown && root.devToolsSide === "bottom" ? root.devToolsHeight + root.inset : 0)
         transform: Translate { x: root.pageShift }
         // P keys: a web view hands the keys its page left unhandled to this, its parent
         Keys.onPressed: event => root.pageKey(event)
@@ -712,7 +719,7 @@ Window {
         width: root.inset + Theme.rounding.small
         height: parent.height
         Rectangle { x: Theme.rounding.small; width: root.inset; height: parent.height; color: Theme.terminal }
-        Cap { y: root.inset; rotation: 90 }
+        Cap { y: pageArea.y; rotation: 90 }
         Cap { y: parent.height - root.inset - height; rotation: 180 }
     }
 
@@ -804,6 +811,7 @@ Window {
         omni: omniModel
         view: root.currentView
         pinned: root.railPinned
+        tabsTop: root.tabsTop
         quiet: root.quietRail
         offTheRecord: root.offTheRecord
         addressLifted: addressEditor.out
@@ -845,6 +853,25 @@ Window {
             onPositionChanged: mouse => { if (pressed) root.railWidth = Math.max(248, Math.min(420, Math.round(root.railWidth + mouse.x - grab))) }
             onDoubleClicked: root.railWidth = 300
         }
+    }
+
+    // The tabs along the top (Settings > Tabs), in the window's ground above the page
+    TabStrip {
+        id: tabStrip
+        visible: root.tabsTop && !root.pageFullScreen
+        x: root.inset
+        y: root.inset
+        width: parent.width - 2 * root.inset
+        height: tabHeight
+        session: sessionModel
+        offTheRecord: root.offTheRecord
+        onActivate: id => root.show(id)
+        onClosePage: id => root.closePage(id)
+        onNewPage: root.newPageKey()
+        onToggleMute: id => root.toggleMute(id)
+        onCommand: (name, ref, arg) => root.command(name, ref, arg)
+        onLeaveList: root.focusPage()
+        Keys.onPressed: event => root.pageKey(event)
     }
 
     // Folded (PLAN.md 3.5): a 24 px zone at the window's left edge opens the rail over the page, at once
@@ -926,13 +953,14 @@ Window {
         // while it slides it moves as one picture: drawn per frame, every tab's own layer (the unlit ones' muted
         // copies) and the shadow cost frames on a full rail
         layer.enabled: slide > 0 && slide < 1
-        y: root.inset * (1 + root.railLift)
+        y: root.inset * (1 + root.railLift) + root.tabsDrop
         width: root.railWidth - root.inset * (2 + root.railLift)
-        height: parent.height - 2 * y
+        height: parent.height - y - root.inset * (1 + root.railLift)
         session: sessionModel
         omni: omniModel
         view: root.currentView
         pinned: root.railPinned
+        tabsTop: root.tabsTop
         offTheRecord: root.offTheRecord
         addressLifted: addressEditor.out
         finder: findModel
@@ -979,7 +1007,7 @@ Window {
             pointer.lastY = y;
             pointer.known = true;
             // heading out into the zone: at once; a way in or along the edge waits the 40 ms
-            if (x < pointer.zone && pointer.leftward && !peek.open)
+            if (x < pointer.zone && y >= root.inset + root.tabsDrop && pointer.leftward && !peek.open)
                 peek.open = true;
         }
         onHoveredChanged: {
@@ -1063,6 +1091,7 @@ Window {
         // the hover zone: the page's first 24 px (16 was easy to miss, owner 2026-10-25)
         readonly property int zone: 24
         readonly property bool inZone: windowPointer.hovered && windowPointer.point.position.x < zone
+            && windowPointer.point.position.y >= root.inset + root.tabsDrop     // not on the tabs along the top
         // out, the rail stays while the pointer is on it or within 48 px of its right edge: a reach for a tab that
         // overshoots its side, or a hand drifting off it, does not tuck it away
         readonly property bool nearRail: peek.out && windowPointer.hovered
@@ -1830,7 +1859,7 @@ Window {
         active: root.shots !== null
         // named apart from the ids: `peek: peek` would bind the property to itself; and through root, as Shots' own
         // function peek() hides the id in here
-        sourceComponent: Shots { app: root; session: sessionModel; history: historyModel; hoverPeek: root.windowHover; peekedRail: peekRail; newPageBar: newBar; rail: pinnedRail; addressCard: addressEditor; pageScroll: pageScrollBar; failures: failurePage; site: siteInfo; welcome: welcomePage }
+        sourceComponent: Shots { app: root; session: sessionModel; history: historyModel; hoverPeek: root.windowHover; peekedRail: peekRail; newPageBar: newBar; rail: pinnedRail; tabStrip: root.windowTabs; addressCard: addressEditor; pageScroll: pageScrollBar; failures: failurePage; site: siteInfo; welcome: welcomePage }
     }
 
     function viewFor(pageId) {
@@ -1850,7 +1879,7 @@ Window {
             v.linkHovered.connect(url => { if (v === root.currentView) root.hoveredLink = String(url) });
             v.asked.connect(a => root.asked(pageId, a));
             v.closeAccepted.connect(() => root.finishClose(pageId));
-            v.closeKept.connect(() => { pinnedRail.closeKept(pageId); peekRail.closeKept(pageId) });
+            v.closeKept.connect(() => { pinnedRail.closeKept(pageId); peekRail.closeKept(pageId); tabStrip.closeKept(pageId) });
             v.copyRequested.connect(text => root.copyText(text));
             v.closeWanted.connect(() => root.finishClose(pageId));
             v.processStopped.connect((status, code) => root.pageStopped(v, status, code, v === root.currentView && !v.parked));
@@ -2178,6 +2207,7 @@ Window {
         afterClose();
         pinnedRail.closed(pageId);
         peekRail.closed(pageId);
+        tabStrip.closed(pageId);
     }
     Connections {
         target: root.instance
@@ -2461,6 +2491,7 @@ Window {
         afterClose();
         pinnedRail.closed(pageId);
         peekRail.closed(pageId);
+        tabStrip.closed(pageId);
     }
 
     // A new ask: the page being closed shows it, as the close waits on it; an unfocused window asks
@@ -2905,7 +2936,7 @@ Window {
         case "movePageUp": if (p) sessionModel.shiftPage(p.id, -1); return !!p;
         case "movePageDown": if (p) sessionModel.shiftPage(p.id, 1); return !!p;
         case "jump": newBar.show("@"); return true;
-        case "fold": root.railPinned = !root.railPinned; return true;
+        case "fold": root.foldKey(); return true;
         case "keepInAlways": keepInAlways(); return !!p && !root.offTheRecord;
         case "save": return saveCurrent();
         case "earlier": return openEarlier(arg);
@@ -3483,29 +3514,45 @@ Window {
         }
     }
 
-    // F6: page, the ask's sheet (a waiting ask first), rail list, page
+    // Ctrl+B: pins and folds the rail; with the tabs along the top there is nothing to pin, so it lifts the rail and
+    // tucks it away again, or sends it away if it is out
+    function foldKey() {
+        if (!tabsTop) {
+            railPinned = !railPinned;
+            return;
+        }
+        if (peek.out) {
+            peek.open = false;
+            peek.flung = false;
+            return;
+        }
+        peek.open = true;
+        closeTimer.restart();
+    }
+    // F6: page, the ask's sheet (a waiting ask first), rail list (the tabs along the top), page
     function focusCycle() {
         const rail = railPinned ? pinnedRail : peekRail;
+        const tabs = tabsTop ? tabStrip : rail;
         if (addressEditor.editing) {
             // the peek opens first, so the card goes back into its slot rather than the handle
             if (!railPinned)
                 peek.open = true;
             addressEditor.cancel();
-            rail.focusList();
+            tabs.focusList();
         } else if (findModel.open || siteInfo.open) {
             // find or the site panel is in the address card's place
             if (!railPinned)
                 peek.open = true;
             findModel.hide();
             siteInfo.hide();
-            rail.focusList();
-        } else if (rail.listFocused) {
+            tabs.focusList();
+        } else if (tabs.listFocused) {
             peek.open = false;
             focusPage();
         } else if (askSheet.section.activeFocus || rail.askFocused || rail.fillFocused) {
             if (!railPinned)
                 peek.open = true;
-            rail.focusList();
+            tabs.focusList();
         } else if (shownAsk && shownAsk.kind === "password") {
             // the "Save password?" line in the card: the pinned rail's, or folded the overlay's, which holds it out
             if (!railPinned)
@@ -4183,7 +4230,9 @@ Window {
         if (s.height > 0)
             height = s.height;
         railWidth = Math.max(248, Math.min(420, s.railWidth ?? railWidth));
-        if (s.railPinned !== undefined)
+        if (tabsTop)
+            setFold(false);
+        else if (s.railPinned !== undefined)
             setFold(s.railPinned);
     }
     // folded (the overlay in) or pinned at once, without the fold's motion
@@ -4410,6 +4459,8 @@ Window {
 
     Component.onCompleted: {
         if (root.offTheRecord) {
+            if (root.tabsTop)
+                setFold(false);
             startPrivate();
             return;
         }

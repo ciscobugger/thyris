@@ -28,6 +28,19 @@ TestCase {
             versions: { qt: "6.11.2", chromium: "134.0.6998.208", security: "134.0.6998.208" }, now: now,
         }, fields ?? {});
     }
+    // Tabs: the side is the default and the only value kept apart from it is "top"
+    function test_tabsChoice() {
+        compare(Settings.defaults.tabs, "side");
+        compare(Settings.choices("tabs").map(c => c.value), ["side", "top"]);
+        compare(Settings.choice("tabs", "Tabs", "side").value, "Along the side");
+        compare(Settings.choice("tabs", "Tabs", "top").value, "Along the top");
+        compare(Settings.foldOf("pages").key, "appearance", "in Appearance and reading, with the zoom and fonts");
+        const prefs = createTemporaryObject(prefsComponent, this);
+        prefs.set("tabs", "top");
+        compare(prefs.values.tabs, "top");
+        prefs.set("tabs", "side");
+        compare(prefs.values.tabs, undefined, "the default is no value");
+    }
     function heads(rows) { return rows.filter(r => r.kind === "head").map(r => r.label) }
     function row(rows, key) { return rows.find(r => r.key === key) ?? null }
 

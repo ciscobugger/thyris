@@ -45,6 +45,44 @@ QtObject {
         + "</script>"
     readonly property string plain: "data:text/html," + encodeURIComponent("<!doctype html><title>plain</title><p>nothing to edit")
 
+    property var tabIds: []
+    property string closing: ""
+    property int tabCursor: -1
+    // the tab of page `id` in the strip, and its centre in window coordinates
+    function tabItem(id) {
+        const list = app.windowTabs.listView;
+        for (let i = 0; i < list.count; i++) {
+            const it = list.itemAtIndex(i);
+            if (it && it.ref === id)
+                return it;
+        }
+        return null;
+    }
+    function tabAt(id, fx, fy) {
+        const it = tabItem(id);
+        return it.mapToItem(null, it.width * fx, it.height * fy);
+    }
+    function tabPress(id) {
+        const p = tabAt(id, 0.5, 0.5);
+        probe.pointer(p.x, p.y);
+        probe.pointer(p.x, p.y, Qt.LeftButton);
+        probe.pointer(p.x, p.y);
+    }
+    function tabClose(id) {
+        const it = tabItem(id), p = it.mapToItem(null, it.width - 16, it.height / 2);
+        probe.pointer(p.x, p.y);
+        probe.pointer(p.x, p.y, Qt.LeftButton);
+        probe.pointer(p.x, p.y);
+    }
+    // the tab of `id` held and moved to `fx` of the way across the tab of `onto`, then let go
+    function tabDrag(id, onto, fx) {
+        const a = tabAt(id, 0.5, 0.5), b = tabAt(onto, fx, 0.5);
+        probe.pointer(a.x, a.y);
+        probe.pointer(a.x, a.y, Qt.LeftButton);
+        for (let i = 1; i <= 6; i++)
+            probe.pointer(a.x + (b.x - a.x) * i / 6, a.y, Qt.LeftButton);
+        probe.pointer(b.x, b.y);
+    }
     property string keysPage: ""
     property string idlePage: ""
     property string idlePage2: ""
@@ -211,6 +249,50 @@ QtObject {
         { name: "released, it is the current row's 14 % again", wait: 300,
           act: () => { const p = check.rowCentre("p:" + session.currentPage); probe.pointer(p.x, p.y); probe.pointer(700, 400) },
           expect: () => Qt.colorEqual(check.rowItem("p:" + session.currentPage).washColor, Theme.rowCurrent) },
+        { group: "tabs" },
+        // Settings > Tabs: along the top the rail stays folded, the page starts under a row of tabs, and the tabs work as the
+        // rail's rows do: a click shows one, × closes, a held tab moves, the keys after F6, and the choice is kept.
+        { setup: true, name: "(a task of three pages and one of its own)", wait: 200,
+          act: () => {
+              const t = session.newThread("tabs check"), u = session.newThread("tabs other");
+              check.tabIds = [0, 1, 2].map(i => session.addPage(t, "about:blank#tab" + i, "")).concat([session.addPage(u, "about:blank#tab3", "")]);
+              check.tabIds.forEach((id, i) => session.update(id, { title: "Tab " + i }));
+              app.show(check.tabIds[0]);
+          },
+          expect: () => check.tabIds.length === 4 && session.currentPage === check.tabIds[0] },
+        { name: "tabs along the top: the rail folds, the strip shows, the page starts under it", wait: 800,
+          act: () => app.prefs.set("tabs", "top"),
+          expect: () => app.tabsTop && !app.railPinned && app.windowTabs.visible && app.currentView.mapToItem(null, 0, 0).y === app.inset + app.tabsHeight },
+        { name: "the strip lists the pages in the rail's order, a hairline where the task of three begins", wait: 100,
+          expect: () => check.tabItem(check.tabIds[2]) !== null && check.tabItem(check.tabIds[0]).edge && !check.tabItem(check.tabIds[1]).edge && !check.tabItem(check.tabIds[3]).edge },
+        { name: "a click on a tab shows its page", wait: 300,
+          act: () => check.tabPress(check.tabIds[1]), expect: () => session.currentPage === check.tabIds[1] },
+        { name: "the pointer on the left edge below the strip still brings the rail out; over the strip it does not", wait: 300,
+          act: () => probe.pointer(8, 15), expect: () => { return !hoverPeek.open } },
+        { name: "(below the strip, the rail comes out)", wait: 300,
+          act: () => probe.pointer(8, 400), expect: () => hoverPeek.open },
+        { name: "(and goes)", wait: 700, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
+        { name: "Ctrl+B lifts the rail, as the pin key does docked", wait: 300,
+          focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, expect: () => hoverPeek.open && !app.railPinned },
+        { name: "(and Ctrl+B sends it away again)", wait: 600, key: Qt.Key_B, mods: ctrl, expect: () => !hoverPeek.open && !app.railPinned },
+        { name: "a held tab dropped before another in its task moves there", wait: 600,
+          act: () => check.tabDrag(check.tabIds[2], check.tabIds[1], 0.1),
+          expect: () => session.threadById(session.pages[check.tabIds[0]].thread).pages.join() === [check.tabIds[0], check.tabIds[2], check.tabIds[1]].join() },
+        { name: "a held tab dropped between tasks leaves its task for a task of its own", wait: 600,
+          act: () => check.tabDrag(check.tabIds[1], check.tabIds[3], 0.1),
+          expect: () => session.pages[check.tabIds[1]].thread !== session.pages[check.tabIds[0]].thread && session.threads.filter(t => t.pages.length === 1).length >= 2 },
+        { name: "a held tab dropped on the middle of another task's tab joins that task", wait: 600,
+          act: () => check.tabDrag(check.tabIds[1], check.tabIds[3], 0.5),
+          expect: () => session.pages[check.tabIds[1]].thread === session.pages[check.tabIds[3]].thread },
+        { name: "F6 puts the ring on the current tab; Right moves it, Enter shows that page", wait: 300,
+          act: () => { app.focusCycle(); app.focusCycle() }, expect: () => { check.tabCursor = app.windowTabs.cursor; return app.windowTabs.listFocused } },
+        { name: "(Right moves the ring)", wait: 300, key: Qt.Key_Right,
+          expect: () => app.windowTabs.cursor === check.tabCursor + 1 },
+        { name: "(Enter)", wait: 300, key: Qt.Key_Return, expect: () => session.currentPage !== "" },
+        { name: "× on the current tab closes its page", wait: 1500,
+          act: () => { const id = session.currentPage; check.closing = id; check.tabClose(id) }, expect: () => { return !session.pages[check.closing] } },
+        { name: "Settings: the choice is kept (written to the profile) and Along the side docks the rail again", wait: 900,
+          act: () => app.prefs.set("tabs", "side"), expect: () => !app.tabsTop && app.railPinned && !app.windowTabs.visible && app.prefs.values.tabs === undefined },
         { group: "scrollbar" },
         // The floating scrollbar (PLAN.md 3.1). Pinned, the page spans x 300-1274, y 6-794 (PLAN.md 3.19); the pill
         // (hovered) is x 1262-1270, and only the pill takes presses.

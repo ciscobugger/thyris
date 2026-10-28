@@ -146,7 +146,7 @@ OwnPage {
             siteChoices: Object.keys(sitesNow).filter(o => Object.keys(sitesNow[o].choices || {}).length > 0).sort()
                 .map(o => ({ origin: o, host: o.replace(/^https?:\/\//, ""), summary: Settings.siteSummary(sitesNow[o]) })),
             lists: adblock ? adblock.lists : [], updating: adblock ? adblock.updating : false, listFailure: prefs.get("listFailure"), listUpdated: prefs.get("listUpdated"),
-            thirdPartyCookies: prefs.get("thirdPartyCookies"), httpsFirst: prefs.get("httpsFirst"),
+            thirdPartyCookies: prefs.get("thirdPartyCookies"), httpsFirst: prefs.get("httpsFirst"), tabs: prefs.get("tabs"),
             // only Clear browsing data shows these, and every cookie a page sets changes the count
             cookies: sub === "clear" && siteData ? (siteData.revision, siteData.allCookies()) : 0, clearing: sub === "clear" ? prefs.clearing : null,
             extensions: extensions,

@@ -556,4 +556,27 @@ TestCase {
         compare(RailRows.privateTitle(s.current), "Private · example.org/x1p42100 camera/0");
         compare(RailRows.privateTitle(null), "Private");
     }
+
+    // the tabs along the top: faces, then every page of every open task, a hairline where a task of several pages begins
+    function test_stripListsFacesThenEveryPageOfEveryTask() {
+        const s = make([["a", 1], ["b", 3], ["c", 1], ["d", 1]]);
+        s.addAlways("https://example.org/pin", "Pin", "");
+        const rows = RailRows.strip(s, {});
+        compare(rows.map(r => r.type), ["pin", "page", "page", "page", "page", "page", "page"]);
+        compare(rows.filter(r => r.type === "page").map(r => r.thread), [0, 1, 1, 1, 2, 3].map(i => s.threads[i].id))
+        compare(rows.filter(r => r.type === "page").map(r => r.edge), [false, true, false, false, true, false], "a hairline before and after the task of three, none between tasks of one");
+        s.setOpen(s.threads[1].id, false);
+        compare(RailRows.strip(s, {}).filter(r => r.type === "page").length, 6, "a task folded in the rail still lists its pages");
+        compare(RailRows.strip(s, { offTheRecord: true }).filter(r => r.type === "pin").length, 0, "a private window has no faces");
+    }
+    function test_stripSyncsIntoTheRailsModel() {
+        const s = make([["a", 2], ["b", 1]]);
+        const m = createTemporaryObject(modelComponent, this);
+        RailRows.sync(m, RailRows.strip(s, {}));
+        compare(m.count, 3);
+        s.update(s.threads[0].pages[0], { title: "Renamed" });
+        RailRows.sync(m, RailRows.strip(s, {}));
+        compare(m.get(0).title, "Renamed");
+        compare(m.get(2).edge, true);
+    }
 }
