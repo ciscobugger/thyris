@@ -518,21 +518,30 @@ const char *const kClipboardPageScript = R"JS((() => {
 // The Chrome Web Store's own Add to Chrome (Discord 2026-10-29, Mustiya: Thyris closed itself): the engine's install
 // dialog looks for a window to sit in, Thyris draws pages without one, and all of Thyris crashed. In the page's own world
 // on the store, its install calls never reach the engine: they answer "cancelled", which leaves the button as it was, and
-// tell Opsis's world, which opens Thyris's own Add to Thyris ask while the person has just pressed something
+// tell Opsis's world, which opens Thyris's own Add to Thyris ask while the person has just pressed something. The
+// store's API is not there yet when a new document's scripts run, so it is taken over again when the document is read
+// and at every press, before the store's own handlers (an install from the packaged 0.1.4-18 still crashed)
 const char *const kStorePageScript = R"JS((() => {
-    const store = location.hostname === 'chromewebstore.google.com'
-        || (location.hostname === 'chrome.google.com' && location.pathname.startsWith('/webstore'));
-    const api = store && self.chrome && chrome.webstorePrivate;
-    if (!api) return;
+    if (location.hostname !== 'chromewebstore.google.com'
+        && !(location.hostname === 'chrome.google.com' && location.pathname.startsWith('/webstore')))
+        return;
     const install = function () {
         dispatchEvent(new CustomEvent('thyris-store-add'));
         const done = Array.prototype.find.call(arguments, a => typeof a === 'function');
         if (done) { setTimeout(() => done('user_cancelled'), 0); return; }
         return Promise.resolve('user_cancelled');
     };
-    for (const name of ['beginInstallWithManifest3', 'install'])
-        if (typeof api[name] === 'function')
-            Object.defineProperty(api, name, { configurable: true, writable: true, value: install });
+    const take = () => {
+        const api = self.chrome && chrome.webstorePrivate;
+        if (!api) return;
+        for (const name of ['beginInstallWithManifest3', 'install'])
+            if (typeof api[name] === 'function' && api[name] !== install)
+                Object.defineProperty(api, name, { configurable: true, writable: true, value: install });
+    };
+    take();
+    addEventListener('DOMContentLoaded', take);
+    for (const type of ['pointerdown', 'mousedown', 'keydown', 'click'])
+        addEventListener(type, take, true);
 })();)JS";
 const char *const kStoreScript = R"JS(addEventListener('thyris-store-add', () => {
     if (self === top && navigator.userActivation && navigator.userActivation.isActive && typeof __opsis === 'function')
