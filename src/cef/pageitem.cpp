@@ -515,6 +515,29 @@ const char *const kClipboardPageScript = R"JS((() => {
             return ownWrite.call(c, items).then(r => { read(items).then(tell, () => {}); return r; });
         } });
 })();)JS";
+// The Chrome Web Store's own Add to Chrome (Discord 2026-10-29, Mustiya: Thyris closed itself): the engine's install
+// dialog looks for a window to sit in, Thyris draws pages without one, and all of Thyris crashed. In the page's own world
+// on the store, its install calls never reach the engine: they answer "cancelled", which leaves the button as it was, and
+// tell Opsis's world, which opens Thyris's own Add to Thyris ask while the person has just pressed something
+const char *const kStorePageScript = R"JS((() => {
+    const store = location.hostname === 'chromewebstore.google.com'
+        || (location.hostname === 'chrome.google.com' && location.pathname.startsWith('/webstore'));
+    const api = store && self.chrome && chrome.webstorePrivate;
+    if (!api) return;
+    const install = function () {
+        dispatchEvent(new CustomEvent('thyris-store-add'));
+        const done = Array.prototype.find.call(arguments, a => typeof a === 'function');
+        if (done) { setTimeout(() => done('user_cancelled'), 0); return; }
+        return Promise.resolve('user_cancelled');
+    };
+    for (const name of ['beginInstallWithManifest3', 'install'])
+        if (typeof api[name] === 'function')
+            Object.defineProperty(api, name, { configurable: true, writable: true, value: install });
+})();)JS";
+const char *const kStoreScript = R"JS(addEventListener('thyris-store-add', () => {
+    if (self === top && navigator.userActivation && navigator.userActivation.isActive && typeof __opsis === 'function')
+        __opsis(JSON.stringify({ k: 'storeAdd' }));
+});)JS";
 // A paste from the desktop's clipboard (PageItem::pasteFromDesktop), called with what it holds, in the frame with the
 // focus: the page's own paste handlers first (a chat takes a picture, an editor its HTML); left to the engine, the text
 // goes in where the caret is, as a paste puts it (never the HTML: the page's handlers clean that, the engine would not)
@@ -736,6 +759,8 @@ CefRefPtr<CefDictionaryValue> scriptsInfo(const QList<ScriptSpec> &specs, int ge
     add("opsis-world", kWorldScript, true);
     add("thyris-clipboard", kClipboardScript, true);
     add("thyris-clipboard-page", kClipboardPageScript, false);
+    add("thyris-store", kStoreScript, true);
+    add("thyris-store-page", kStorePageScript, false);
     for (const ScriptSpec &s : specs)
         add(s.key.toStdString(), s.source, s.opsisWorld);
     CefRefPtr<CefDictionaryValue> info = CefDictionaryValue::Create();
@@ -1346,6 +1371,10 @@ public:
                  {{QStringLiteral("source"), QString::fromLatin1(kClipboardScript)}, {QStringLiteral("worldName"), QStringLiteral("opsis")}, {QStringLiteral("runImmediately"), true}});
         devtools(QStringLiteral("Page.addScriptToEvaluateOnNewDocument"),
                  {{QStringLiteral("source"), QString::fromLatin1(kClipboardPageScript)}, {QStringLiteral("runImmediately"), true}});
+        devtools(QStringLiteral("Page.addScriptToEvaluateOnNewDocument"),
+                 {{QStringLiteral("source"), QString::fromLatin1(kStoreScript)}, {QStringLiteral("worldName"), QStringLiteral("opsis")}, {QStringLiteral("runImmediately"), true}});
+        devtools(QStringLiteral("Page.addScriptToEvaluateOnNewDocument"),
+                 {{QStringLiteral("source"), QString::fromLatin1(kStorePageScript)}, {QStringLiteral("runImmediately"), true}});
         // the page's scripts go in before its first document: the item's syncScripts ends in setScriptsNow, which loads
         // the address kept in m_pending once every script is in
         m_firstLoad = true;
@@ -2537,6 +2566,10 @@ void PageItem::bridged(const QJsonObject &message) {
     const QString kind = message.value(QStringLiteral("k")).toString();
     if (kind == QStringLiteral("channel")) {
         emit webChannelMessage(message.value(QStringLiteral("m")).toString());
+        return;
+    }
+    if (kind == QStringLiteral("storeAdd")) {
+        emit storeAddPressed();
         return;
     }
     if (kind != QStringLiteral("scroll"))

@@ -235,6 +235,8 @@ signals:
     // a WebChannel message one of Opsis's scripts sent from the page (qt.webChannelTransport in Opsis's world), for the
     // shim's webChannel
     void webChannelMessage(const QString &message);
+    // the Chrome Web Store's own Add button pressed (kStorePageScript): the engine's install is not let through
+    void storeAddPressed();
     // a touchpad's fingers down on it (a gesture began over the page) and lifted, for a sideways swipe back or forward
     void touchpadGesture(bool fingersDown);
     // Ctrl and the wheel, or a touchpad pinch, over the page: zoom it this many steps (+ in, - out). Chrome zooms in its

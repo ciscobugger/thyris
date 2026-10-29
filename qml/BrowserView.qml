@@ -932,6 +932,8 @@ WebEngineView {
         replace(a, Object.assign({}, a, { ticket: ticket }));
     }
     function addFromStore() { if (storeItem !== "") startExtension("store", storeItem, "") }
+    // the store's own Add to Chrome asks as the Add to Thyris line does (PageItem::storeAddPressed)
+    onStoreAddPressed: if (storeItem !== "" && !WebStore.added(storeItem)) addFromStore()
     function addFromFile(path) { startExtension("file", "", path) }
     // an update that asks for more than the old version could (WebStore.updateAsks)
     function askUpdate(info) {
