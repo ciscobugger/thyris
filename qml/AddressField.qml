@@ -258,7 +258,9 @@ Item {
             visible: field.addLine !== ""
             x: 12
             y: 31
-            text: field.addLine === "added" ? "Added to Thyris · starts when Thyris reopens" : "Add to Thyris"
+            // after the reopen it runs: no "starts when" any more
+            text: field.addLine === "added" ? (WebStore.waiting(field.storeId) ? "Added to Thyris · starts when Thyris reopens" : "Added to Thyris")
+                                            : "Add to Thyris"
             font.pixelSize: Theme.font.smaller
             color: field.addLine === "add" && addArea.containsMouse ? Theme.colOnLayer0 : field.addLine === "add" ? Theme.colOnSurface : Theme.colSubtext
             Behavior on color { CAnim { hover: true } }

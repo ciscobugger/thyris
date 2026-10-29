@@ -369,6 +369,7 @@ QVariantMap WebStore::add(int ticket) {
             if (!job.scratch.isEmpty())
                 QDir(job.scratch).removeRecursively();
             Extensions::announce();
+            addedNow.append(info.value(QStringLiteral("id")).toString());
             return QVariantMap{{QStringLiteral("ok"), true}, {QStringLiteral("id"), info.value(QStringLiteral("id"))},
                                {QStringLiteral("name"), info.value(QStringLiteral("name"))}, {QStringLiteral("problem"), QString()}};
         }

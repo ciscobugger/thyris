@@ -48,6 +48,9 @@ public:
     // the extension a store page is, or "": only the store's item pages
     Q_INVOKABLE QString itemId(const QUrl &page) const;
     Q_INVOKABLE bool added(const QString &id) const;
+    // added since this Thyris started: the engine loads extensions only at its start, so it runs from the next one
+    Q_INVOKABLE bool waiting(const QString &id) const { return addedNow.contains(id); }
+    static inline QStringList addedNow;
     // checks: the addresses asked of the stand-in (useFixtures), and starting that list afresh
     Q_INVOKABLE QStringList requests() const { return requested; }
     Q_INVOKABLE void forgetRequests() const { requested.clear(); }
