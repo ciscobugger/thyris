@@ -389,7 +389,22 @@ void WebStore::relaunch() {
         ++relaunched;
         return;
     }
-    QProcess::startDetached(QCoreApplication::applicationFilePath(), {});
+    QProcess again;
+    again.setProgram(QCoreApplication::applicationFilePath());
+    again.setProcessEnvironment(relaunchEnvironment());
+    again.startDetached();
+}
+
+// main.cpp points XDG_DATA_HOME and XDG_CACHE_HOME at opsis-cef; a start made with those would nest a second opsis-cef in it,
+// an empty profile with no pages and none of the added extensions (VM, 2026-10-29). The new start gets the outer ones back.
+QProcessEnvironment WebStore::relaunchEnvironment() {
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    for (const char *name : {"DATA", "CACHE"}) {
+        const QString outer = env.value(QStringLiteral("THYRIS_OUTER_XDG_") + QLatin1String(name) + QStringLiteral("_HOME"));
+        if (!outer.isEmpty())
+            env.insert(QStringLiteral("XDG_") + QLatin1String(name) + QStringLiteral("_HOME"), outer);
+    }
+    return env;
 }
 
 void WebStore::startUpdates() {

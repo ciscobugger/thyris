@@ -133,6 +133,9 @@ OwnPage {
                          added: e.added ?? 0, updated: e.updated ?? 0, waiting: e.waiting ?? false })) : [];
     }
     onExtensionManagerChanged: readExtensions()
+    // the list is read when Settings opens as well: a start finds extensions added before it, and nothing signals those
+    Component.onCompleted: readExtensions()
+    onViewChanged: if (view) readExtensions()
     readonly property var state: {
         tick;
         prefs.revision;

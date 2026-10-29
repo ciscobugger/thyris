@@ -2955,6 +2955,26 @@ QtObject {
               return !!e && !!r && /^Chrome Web Store · version 1\.0 · added today$/.test(r.detail) } },
         { name: "Remove", wait: 2000, act: () => check.clickOwn("own:ext:" + check.ids[0] + ":remove"),
           expect: () => !WebStore.added(check.ids[0]) && Extensions.loadPaths().length === 0 && probe.entries(probe.env("XDG_DATA_HOME") + "/browser/extensions/added").indexOf(check.ids[0]) < 0 },
+        { group: "extreopen" },
+        check.server,
+        // What Reopen now leaves for the next start, 2026-10-29 (VM): the added extensions are on the list in Settings, and the new
+        // start is given the data folder this one was started with, not the opsis-cef one main.cpp made up (tools/check-engine sets
+        // THYRIS_OUTER_XDG_DATA_HOME; the list is written as a start finds it, with no signal to the Settings page).
+        { name: "(a page, and Settings > Extensions and import: nothing added)", wait: 2500,
+          act: () => { app.go(check.local("/plain"), "navigate"); app.openOwn("settings", "extensions") },
+          expect: () => !!app.windowSettings && app.windowSettings.extensions.length === 0 },
+        { name: "(back to a page; a store extension is on the list in the files, as a start would find it)", wait: 2500,
+          act: () => { app.leaveSettings(); probe.fixtureFile("browser/extensions/added/added.json", JSON.stringify([{ id: "a".repeat(32), name: "Listed extension",
+              enabled: true, source: "store", version: "2.5", added: Date.now(), updated: Date.now() }])) },
+          expect: () => !app.windowSettings || app.windowSettings.extensions.length === 0 },
+        { name: "Settings > Extensions and import lists it, from the store, with its version", wait: 2500,
+          act: () => app.openOwn("settings", "extensions"),
+          expect: () => { const e = app.windowSettings.extensions; const r = e.length === 1 ? check.ownRow("ext:" + e[0].id) : null;
+              probe.report("     " + JSON.stringify(e) + " " + JSON.stringify(r)); probe.grab(app, "extensions-listed");
+              return !!r && e[0].name === "Listed extension" && e[0].source === "store" && e[0].version === "2.5" && /^Chrome Web Store · version 2\.5/.test(r.detail) } },
+        { name: "Reopen now starts Thyris with the data folder this one was started with", expect: () => {
+              const outer = probe.env("THYRIS_OUTER_XDG_DATA_HOME"); probe.report("     outer " + outer + ", relaunch " + WebStore.relaunchData());
+              return outer !== "" && WebStore.relaunchData() === outer && outer !== probe.env("XDG_DATA_HOME") } },
         { group: "extrun" },
         check.server,
         // WEBSTORE_LOAD=<folder>: an extension with a content script, loaded as main.cpp loads the added ones. It runs on a page of

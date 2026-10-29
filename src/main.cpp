@@ -213,6 +213,10 @@ int main(int argc, char *argv[]) {
     if (!checkMode && !shotMode && !qEnvironmentVariableIsSet("OPSIS_CHECK_CHILD")) {
         const QString own = realData + QStringLiteral("/opsis-cef");
         QDir().mkpath(own);
+        // Reopen now starts Thyris again from this process's environment: it must see the folders this one was started with, not
+        // the ones below, or it would make a profile of its own inside opsis-cef (WebStore::relaunch)
+        qputenv("THYRIS_OUTER_XDG_DATA_HOME", realData.toLocal8Bit());
+        qputenv("THYRIS_OUTER_XDG_CACHE_HOME", qEnvironmentVariable("XDG_CACHE_HOME", QDir::homePath() + QStringLiteral("/.cache")).toLocal8Bit());
         QFile::link(realData + QStringLiteral("/fonts"), own + QStringLiteral("/fonts"));
         qputenv("XDG_DATA_HOME", own.toLocal8Bit());
         qputenv("XDG_CACHE_HOME", (qEnvironmentVariable("XDG_CACHE_HOME", QDir::homePath() + QStringLiteral("/.cache"))

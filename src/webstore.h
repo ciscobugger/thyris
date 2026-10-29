@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QProcessEnvironment>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -52,6 +53,9 @@ public:
     Q_INVOKABLE void forgetRequests() const { requested.clear(); }
     // checks: how many times Reopen now started Thyris again (dryRun)
     Q_INVOKABLE int relaunches() const { return relaunched; }
+    // checks: the data folder the new start would be given
+    Q_INVOKABLE QString relaunchData() const { return relaunchEnvironment().value(QStringLiteral("XDG_DATA_HOME")); }
+    static QProcessEnvironment relaunchEnvironment();
 
     // the ticket comes back at once; the answer comes as `prepared` or `refused`
     Q_INVOKABLE int fromStore(const QString &id);

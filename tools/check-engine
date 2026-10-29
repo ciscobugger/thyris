@@ -22,5 +22,5 @@ weston --backend=headless --xwayland --shell=kiosk --socket=$sock --no-config --
 trap 'kill $weston 2>/dev/null; rm -f "$xlog"' EXIT
 for i in $(seq 50); do x=$(grep -o 'xserver listening on display :[0-9]*' "$xlog" | grep -o ':[0-9]*$' || true); [ -n "$x" ] && break; sleep 0.1; done
 [ -n "$x" ] || { echo "check-engine: the private X server did not start" >&2; exit 1; }
-CHECK_X_DISPLAY=$x QT_FORCE_STDERR_LOGGING=1 timeout 1800 "$root/$dir/browser" --check-engine "$@" 2>&1 \
+CHECK_X_DISPLAY=$x THYRIS_OUTER_XDG_DATA_HOME=/var/empty/outer-data QT_FORCE_STDERR_LOGGING=1 timeout 1800 "$root/$dir/browser" --check-engine "$@" 2>&1 \
     | { grep -vE 'default value of option force_gl_vendor|Vulkan|GPU vendor|GPUInfo|Icon theme|no filter lists' || true; }
