@@ -57,12 +57,21 @@ Item {
                                   ? Logins.forOrigin(Passwords.entries, view.loginField.origin) : []
     readonly property bool fillShown: !ask && logins.length > 0 && (view.loginFocused || fill.activeFocus)
     readonly property bool fillFocused: fill.activeFocus
+    // the "Add to Thyris" line on a store page: F6 reaches it, Enter or Space presses it
+    readonly property bool addShown: addLabel.visible && addLine === "add"
+    readonly property bool addFocused: addLabel.activeFocus
+    function focusAdd() { addLabel.forceActiveFocus(Qt.TabFocusReason) }
     function focusFill() { fill.focusFirst() }
     signal fillPicked(var entry)
     signal fillLeft()                       // Esc in the Fill rows: back to the page
     // shown when it is not the default zoom (Settings > Pages), 100 % unless set
     readonly property string zoomText: view && Math.abs(view.zoomFactor - (view.sites ? view.sites.defaultZoom : 1)) > 0.001 ? Math.round(view.zoomFactor * 100) + " %" : ""
-    readonly property int lineHeight: 40 + (stateLine !== "" || shownNotice !== null ? 14 : 0)
+    // Add to Thyris (src/webstore.*): on an extension's own page in the Chrome Web Store, a line of Thyris's own under the
+    // address. The page offers only its id; nothing on it can draw or press this.
+    readonly property string storeId: view ? view.storeItem ?? "" : ""
+    readonly property string addLine: storeId === "" || stateLine !== "" || shownNotice !== null || ask !== null || lifted ? ""
+                                      : (view.asks, WebStore.added(storeId)) ? "added" : view.extensionAsking ? "" : "add"
+    readonly property int lineHeight: 40 + (stateLine !== "" || shownNotice !== null || addLine !== "" ? 14 : 0)
 
     width: parent ? parent.width : 280
     height: lineHeight + (ask ? section.height : (fillShown ? fill.height : 0) + (passwordNote ? note.height : 0))
@@ -224,6 +233,43 @@ Item {
             text: field.stateLine
             font.pixelSize: Theme.font.smaller
             color: Theme.colSubtext
+        }
+        Label {
+            id: addLabel
+            objectName: "addExtension"
+            z: 2
+            activeFocusOnTab: true
+            Keys.onPressed: event => {
+                if (field.addLine === "add" && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+                    field.view.addFromStore();
+                    Qt.callLater(() => field.focusAsk());
+                    event.accepted = true;
+                }
+            }
+            Rectangle {
+                anchors { fill: parent; margins: -3 }
+                z: -1
+                visible: addLabel.activeFocus
+                radius: 4
+                color: "transparent"
+                border.width: 1
+                border.color: Theme.colOnSurface
+            }
+            visible: field.addLine !== ""
+            x: 12
+            y: 31
+            text: field.addLine === "added" ? "Added to Thyris · starts when Thyris reopens" : "Add to Thyris"
+            font.pixelSize: Theme.font.smaller
+            color: field.addLine === "add" && addArea.containsMouse ? Theme.colOnLayer0 : field.addLine === "add" ? Theme.colOnSurface : Theme.colSubtext
+            Behavior on color { CAnim { hover: true } }
+            MouseArea {
+                id: addArea
+                anchors { fill: parent; margins: -4 }
+                enabled: field.addLine === "add"
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: field.view.addFromStore()
+            }
         }
         // above restArea, so the action takes its own click
         Row {

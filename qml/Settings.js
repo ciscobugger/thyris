@@ -206,6 +206,20 @@ function failure(text) {
         return "A list's server did not answer in time";
     return curl[2];
 }
+// Where an extension came from and how current it is: "Chrome Web Store · version 2026.1026 · updated 3 days ago"
+function extensionDetail(e, now) {
+    const parts = [e.source === "store" ? "Chrome Web Store" : "From a file, not checked by the store"];
+    if (e.version)
+        parts.push("version " + e.version);
+    const at = e.updated || e.added;
+    if (at > 0 && now >= at) {
+        const days = Math.floor((now - at) / 86400000);
+        parts.push((e.updated && e.updated !== e.added ? "updated " : "added ") + (days < 1 ? "today" : days === 1 ? "yesterday" : days + " days ago"));
+    }
+    if (e.waiting)
+        parts.push("update waits for the next start");
+    return parts.join(" · ");
+}
 // a row of one of a few `choices(key)`, set to `v`
 function choice(key, label, v) {
     return { kind: "choice", key: key, label: label, value: value(key, v), picked: v,
@@ -528,12 +542,13 @@ function rows(s, sub, filter) {
     // them from its next start. The Web Store's Add button needs the manager and does nothing here.
     section("extensions", s.extensionsInstall === false
         ? [{ kind: "note", key: "none", label: "Thyris can't add extensions yet. Ads are blocked by uBlock Origin Lite, which comes with it." }]
-        : s.extensions.map(e => Object.assign(choice("ext:" + e.id, e.name, e.error ? "Failed: " + e.error : e.enabled ? "on" : "off"), { words: e.name })).concat([
+        : s.extensions.map(e => Object.assign(choice("ext:" + e.id, e.name, e.error ? "Failed: " + e.error : e.enabled ? "on" : "off"),
+                                              { words: e.name, detail: extensionDetail(e, s.now) })).concat([
         { kind: "action", key: "install", label: "Add from a folder or .zip", value: "", action: "Choose" },
     ]).concat(s.extensionProblem ? [{ kind: "note", key: "problem", label: s.extensionProblem }] : [])
       .concat(s.extensionsRestart ? [{ kind: "note", key: "restart", label: "Changes to extensions start the next time Thyris opens." }] : [])
       .concat([
-        { kind: "note", key: "store", label: "The Chrome Web Store's Add button doesn't work in Thyris. Download the extension, unpack it or keep the .zip, and add it here." },
+        { kind: "note", key: "store", label: "On an extension's page in the Chrome Web Store, press Add to Thyris under the address. One added from a folder or .zip isn't checked by the store." },
         { kind: "note", key: "access", label: "Each extension can read the sites it asks for." },
     ]));
     section("import", s.zen ? importRows(s.zen, s.now) : []);

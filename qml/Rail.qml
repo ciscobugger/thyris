@@ -88,6 +88,9 @@ Item {
     readonly property bool fillFocused: address.fillFocused
     function focusFill() { address.focusFill() }
     signal fillPicked(var entry)
+    readonly property bool addShown: address.addShown
+    readonly property bool addFocused: address.addFocused
+    function focusAdd() { address.focusAdd() }
 
     implicitWidth: 300
 

@@ -210,4 +210,31 @@ TestCase {
         s.noteAsked("", ["camera"]);
         compare(Object.keys(s.entries).length, 1, "a page without an origin notes nothing");
     }
+
+    // Add to Thyris (Asks.js, kind "extension"): each state says what is happening and what can be pressed
+    function test_extensionAsk() {
+        const base = { id: 1, kind: "extension", source: "store", host: "chromewebstore.google.com", name: "Block It", version: "2.0", words: [] };
+        const labels = a => Asks.view(a, "").buttons.map(b => b.label + ":" + b.choice).join();
+        const working = Asks.view(Object.assign({}, base, { state: "working" }), "");
+        compare(working.lines[0].text, "Getting the extension from Google");
+        compare(labels(Object.assign({}, base, { state: "working" })), "Stop:cancel");
+        const ask = Asks.view(Object.assign({}, base, { state: "ask", words: ["Block things on pages", "See your browsing history"] }), "");
+        compare(ask.lines.map(l => l.text), ["Add Block It to Thyris?", "Version 2.0", "It can:", "Block things on pages", "See your browsing history"]);
+        compare(ask.notes, [], "from the store: no warning");
+        compare(labels(Object.assign({}, base, { state: "ask" })), "Add to Thyris:add,Not now:notnow");
+        compare(Asks.view(Object.assign({}, base, { state: "ask" }), "").lines[2].text, "It doesn't ask to read your pages or data.");
+        compare(Asks.view(Object.assign({}, base, { state: "ask", source: "file" }), "").notes,
+                ["This one isn't from the Chrome Web Store, so the store hasn't checked it."]);
+        const update = Asks.view(Object.assign({}, base, { state: "ask", update: true, words: ["See your browsing history"] }), "");
+        compare(update.lines[0].text, "Update Block It to 2.0?");
+        compare(update.lines[1].text, "It now also can:");
+        const added = Asks.view(Object.assign({}, base, { state: "added" }), "");
+        compare(added.lines[0].text, "Added Block It. Thyris reopens your pages to start it.");
+        compare(labels(Object.assign({}, base, { state: "added" })), "Reopen now:reopen,Later:later");
+        const failed = Asks.view(Object.assign({}, base, { state: "failed", problem: "Google has no extension at that address." }), "");
+        compare(failed.lines.map(l => l.text), ["Google has no extension at that address.", "Nothing was added."]);
+        compare(Asks.view(Object.assign({}, base, { state: "failed", problem: "It failed, so nothing was added." }), "").lines.length, 1);
+        compare(Asks.word(Object.assign({}, base, { state: "ask" })), "add?");
+        verify(Asks.order([base, { id: 2, kind: "claude" }])[0].kind === "claude", "Claude needs you comes before an extension ask");
+    }
 }

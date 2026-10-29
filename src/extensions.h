@@ -1,9 +1,11 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 #include <qqmlintegration.h>
 
 class QProcess;
@@ -17,7 +19,8 @@ class Extensions : public QObject {
     Q_OBJECT
     QML_ELEMENT
     QML_SINGLETON
-    // [{ id, name, isInstalled, isEnabled, error }], the ones added here
+    // [{ id, name, isInstalled, isEnabled, error, source ("store" or "file"), version, added, updated (ms), waiting (an update
+    // waits for the next start) }], the ones added here
     Q_PROPERTY(QVariantList extensions READ extensions NOTIFY changed)
     // why the last Add failed, in words; empty after one that worked
     Q_PROPERTY(QString problem READ problem NOTIFY changed)
@@ -25,15 +28,34 @@ class Extensions : public QObject {
     Q_PROPERTY(bool restartNeeded READ restartNeeded NOTIFY changed)
 public:
     explicit Extensions(QObject *parent = nullptr);
+    ~Extensions() override { s_self = nullptr; }
 
     // the folders of the turned-on extensions, for --load-extension at the start
     Q_INVOKABLE static QStringList loadPaths();
+    // Extensions come from the Chrome Web Store (src/webstore.*) or from a folder or .zip. The list and its folder are shared:
+    static QString store();
+    static QJsonArray read();
+    static bool save(const QJsonArray &list);
+    // `from` (holding manifest.json) becomes an added extension: moved or copied into the store, listed and on. `source` is
+    // "store" (`id` is its 32-letter id and `key` its public key in base64, both checked by the caller) or "file" (`id` empty:
+    // a name of Thyris's own). false with `problem` set when it is not added.
+    struct Added {
+        QString source = QStringLiteral("file");
+        QString id;
+        QString key;
+    };
+    static bool commit(const QString &from, bool move, const Added &meta, QString *problem, QVariantMap *info = nullptr);
+    // the manifest of a folder, empty when it cannot be read; the name a manifest shows (its own, or a locale's message)
+    static QJsonObject manifestOf(const QString &dir);
+    static QString nameOf(const QString &dir, const QJsonObject &manifest);
+    // something was added, removed or switched from outside this class (WebStore): the lists redraw
+    static void announce();
     // --check-engine and tests: where the extensions are kept (default: the data folder's browser/extensions/added)
     static inline QString storeOverride;
 
     QVariantList extensions() const;
     QString problem() const { return m_problem; }
-    bool restartNeeded() const { return m_restart; }
+    bool restartNeeded() const { return s_restart; }
 
     // `path`: an unpacked extension's folder, or a .zip of one
     Q_INVOKABLE void installExtension(const QString &path);
@@ -49,14 +71,12 @@ signals:
     void unloadFinished();
 
 private:
-    static QString store();
-    static QJsonArray read();
-    bool save(const QJsonArray &list);
     void fail(const QString &why);
     void add(const QString &from, bool move);
     static QString idOf(const QVariant &info);
+    static inline Extensions *s_self = nullptr;
+    static inline bool s_restart = false;
 
     QString m_problem;
-    bool m_restart = false;
     bool m_busy = false;
 };

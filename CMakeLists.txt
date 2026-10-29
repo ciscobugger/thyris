@@ -21,6 +21,7 @@ find_package(Cups REQUIRED)
 find_package(SQLite3 REQUIRED)
 # Chrome's saved passwords and cookies (AES-128-CBC, PBKDF2: src/chromeimport.cpp)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+find_package(ZLIB REQUIRED)
 # QWindowSystemInterface, for --check-engine to deliver keys as the window system does; QQuickWebEngineView's
 # private header, for Windows.restore and Printing.toPdf (src/viewprivate.h)
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
@@ -53,7 +54,7 @@ if(BROWSER_DEV OR BROWSER_CEF)
     set(qml_compile NO_CACHEGEN)
 endif()
 qt_add_qml_module(browser URI Browser ${qml_compile}
-    SOURCES src/theme.cpp src/theme.h src/store.cpp src/store.h src/backdrop.cpp src/backdrop.h src/apps.cpp src/apps.h src/picker.cpp src/picker.h src/facts.cpp src/facts.h src/disk.cpp src/disk.h src/sitedata.cpp src/sitedata.h src/windows.cpp src/windows.h src/engine.cpp src/engine.h src/passwords.cpp src/passwords.h src/printing.cpp src/printing.h src/readability.cpp src/readability.h src/zen.cpp src/zen.h src/passwordfile.cpp src/passwordfile.h src/chromeimport.cpp src/chromeimport.h src/extensions.cpp src/extensions.h
+    SOURCES src/theme.cpp src/theme.h src/store.cpp src/store.h src/backdrop.cpp src/backdrop.h src/apps.cpp src/apps.h src/picker.cpp src/picker.h src/facts.cpp src/facts.h src/disk.cpp src/disk.h src/sitedata.cpp src/sitedata.h src/windows.cpp src/windows.h src/engine.cpp src/engine.h src/passwords.cpp src/passwords.h src/printing.cpp src/printing.h src/readability.cpp src/readability.h src/zen.cpp src/zen.h src/passwordfile.cpp src/passwordfile.h src/chromeimport.cpp src/chromeimport.h src/extensions.cpp src/extensions.h src/crx.cpp src/crx.h src/storerules.cpp src/storerules.h src/storefetch.cpp src/storefetch.h src/webstore.cpp src/webstore.h
     QML_FILES qml/Main.qml qml/BrowserView.qml qml/Session.qml qml/History.qml qml/Rail.qml qml/TabStrip.qml qml/Omnibox.qml qml/AddressField.qml qml/AddressEditor.qml qml/CommandBar.qml qml/SuggestionRow.qml qml/KeyCap.qml qml/IconButton.qml
               qml/RailRows.js qml/PageMenu.js qml/PageState.js qml/LoadLine.qml qml/Busy.qml qml/Count.qml qml/RowMenu.qml qml/KeyMap.js qml/Lifecycle.js
               qml/Asks.js qml/AskSection.qml qml/AskSheet.qml qml/Sites.qml qml/TextButton.qml qml/Slab.qml qml/PageDialog.qml qml/PopupCard.qml
@@ -80,15 +81,25 @@ qt_add_resources(browser "savedpages" PREFIX "/check" BASE tests/fixtures
 if(BROWSER_CEF)
     target_link_libraries(browser PRIVATE
         Qt6::Gui Qt6::GuiPrivate Qt6::Network Qt6::Qml Qt6::Quick Qt6::DBus
-        Qt6::Pdf Qt6::PdfQuick Cups::Cups SQLite3::SQLite3 OpenSSL::Crypto
+        Qt6::Pdf Qt6::PdfQuick Cups::Cups SQLite3::SQLite3 OpenSSL::Crypto ZLIB::ZLIB
         ${ADBLOCK_LIB} dl pthread m)
     # the cef library, PageItem and CefRuntime, the stand-in for Qt WebEngine's QML module, browser-page and cefpage
     add_subdirectory(src/cef)
 else()
 target_link_libraries(browser PRIVATE
     Qt6::Gui Qt6::GuiPrivate Qt6::WebEngineQuickPrivate Qt6::Network Qt6::Qml Qt6::Quick Qt6::WebEngineQuick Qt6::WebEngineCore Qt6::DBus
-    Qt6::Pdf Qt6::PdfQuick Cups::Cups SQLite3::SQLite3 OpenSSL::Crypto
+    Qt6::Pdf Qt6::PdfQuick Cups::Cups SQLite3::SQLite3 OpenSSL::Crypto ZLIB::ZLIB
     ${ADBLOCK_LIB} dl pthread m)
 endif()
 
 install(TARGETS browser)
+
+# The Chrome Web Store feature's parts that need no window or network (src/crx.*, src/storerules.*): ctest, or
+# `cmake --build <dir> --target store_test` and run <dir>/store_test
+find_package(Qt6 REQUIRED COMPONENTS Test)
+enable_testing()
+qt_add_executable(store_test EXCLUDE_FROM_ALL tests/native/store_test.cpp src/crx.cpp src/storerules.cpp src/storefetch.cpp src/webstore.cpp src/extensions.cpp)
+target_include_directories(store_test PRIVATE src)
+target_compile_definitions(store_test PRIVATE SRCDIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/native")
+target_link_libraries(store_test PRIVATE Qt6::Core Qt6::Qml Qt6::Network Qt6::Test OpenSSL::Crypto ZLIB::ZLIB)
+add_test(NAME store_test COMMAND store_test)

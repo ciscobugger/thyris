@@ -331,6 +331,21 @@ QtObject {
         },
         "ask-screen": () => meet([{ id: 1, kind: "screen", host: "meet.google.com", screens: 1,
             options: ["Entire screen · eDP-1", "Window · foot  ~/book4-edge/camss", "Window · Code"] }]),
+        // Add to Thyris on the Chrome Web Store: the line under the address, then the ask in each of its states
+        "extension-line": () => storePage(),
+        "extension-working": () => storePage([{ id: 1, kind: "extension", state: "working", source: "store", host: "chromewebstore.google.com", words: [] }]),
+        "extension-ask": () => storePage([storeAsk()]),
+        "extension-ask-few": () => storePage([Object.assign(storeAsk(), { name: "Reading Time", version: "3.2", icon: "", words: [] })]),
+        "extension-ask-many": () => storePage([Object.assign(storeAsk(), { name: "Everything Saver", words: ["Read and change the pages you visit, on every site", "See your browsing history",
+            "See the addresses and titles of your open pages", "Read and change the cookies sites keep, which can hold sign-ins", "Block things on pages", "Download files and see what you downloaded"] })]),
+        "extension-added": () => storePage([Object.assign(storeAsk(), { state: "added" })]),
+        "extension-update": () => storePage([Object.assign(storeAsk(), { update: true, version: "2026.1030.1", host: "Thyris", words: ["See your browsing history"] })]),
+        "extension-failed": () => storePage([Object.assign(storeAsk(), { state: "failed", problem: "The file from Google didn't check out, so nothing was added. Try again in a moment." })]),
+        "extension-failed-net": () => storePage([Object.assign(storeAsk(), { state: "failed", problem: "Thyris couldn't reach Google's extension service. Check your connection and try again." })]),
+        "extension-file": () => storePage([Object.assign(storeAsk(), { source: "file", host: "Thyris", icon: "", words: ["Read and change your data on example.com and other.org"] })]),
+        "settings-extensions-store": () => settings("extensions", [
+            { id: ubolId, name: "uBlock Origin Lite", enabled: true, error: "", source: "store", version: "2026.1026.1812", added: Date.now() - 9 * 86400000, updated: Date.now() - 3 * 86400000, waiting: false },
+            { id: "0123456789ab", name: "My notes helper", enabled: false, error: "", source: "file", version: "0.3", added: Date.now() - 20 * 86400000, updated: Date.now() - 20 * 86400000, waiting: false }]),
         "ask-external": () => page("Free torrents - WebTorrent", "https://webtorrent.io/free-torrents", "W", "#b0452c").asks = [
             { id: 1, kind: "external", host: "webtorrent.io", scheme: "magnet", app: "qBittorrent" }],
         "ask-external-none": () => page("Free torrents - WebTorrent", "https://webtorrent.io/free-torrents", "W", "#b0452c").asks = [
@@ -681,7 +696,19 @@ QtObject {
 
     // Settings (3.15) opened by Ctrl+, (`section` as Ctrl+/ and Ctrl+Shift+Delete give it), with what the page would read
     // from the profile, the ad blocker and the desktop, which shots have none of
-    function settings(section) {
+    readonly property string ubolId: "ddkjiahejlhfcafbddmgiahcphecmpfh"
+    function storePage(asks) {
+        const v = page("uBlock Origin Lite - Chrome Web Store", "https://chromewebstore.google.com/detail/ublock-origin-lite/" + ubolId, "C", "#3367d6");
+        v.storeItem = ubolId;
+        if (asks)
+            v.asks = asks;
+        return v;
+    }
+    function storeAsk() {
+        return { id: 1, kind: "extension", state: "ask", source: "store", host: "chromewebstore.google.com", name: "uBlock Origin Lite", version: "2026.1026.1812",
+                 icon: favicon("u", "#800000"), words: ["Read and change the pages you visit, on every site", "Block things on pages", "Use the page you are on when you press its button"] };
+    }
+    function settings(section, extensions) {
         const now = Date.now(), day = 86400000, at = h => { const d = new Date(now); d.setHours(h, 10, 0, 0); return d.getTime() };
         app.windowSettings.shotState = {
             defaultBrowser: "yes", folder: "/home/you/Downloads", home: "/home/you",
@@ -693,7 +720,7 @@ QtObject {
                     { file: "ubo-unbreak", modified: at(6), version: "2026.926.1903" }, { file: "easylist", modified: at(6), version: "202609290512" },
                     { file: "easyprivacy", modified: at(6), version: "202609290512" }, { file: "pgl", modified: at(6) - day }],
             cookies: 214,
-            extensions: [{ id: "ddkjiahejlhfcafbddmgiahcphecmpfh", name: "uBlock Origin Lite", enabled: true, error: "" }],
+            extensions: extensions ?? [{ id: "ddkjiahejlhfcafbddmgiahcphecmpfh", name: "uBlock Origin Lite", enabled: true, error: "" }],
         };
         app.openOwn("settings", section ?? "");
     }

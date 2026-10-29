@@ -10,11 +10,15 @@
 //   save                                         Ctrl+D in a private window: the page to save, `url`, `title`, `icon`
 //   password                                     a login form sent: "Save password for <host>?" for `origin`, `user`,
 //                                                `password` (in memory only, gone with the ask)
+//   extension                                    Add to Thyris (src/webstore.*): `state` working (the file is fetched and
+//                                                checked), ask (`name`, `version`, `icon`, `words`: what it can do, `source`
+//                                                "store" or "file", `update`), added (`name`: reopen to start it) or failed
+//                                                (`problem`)
 // `quiet`: a notification ask made without a click, shown only as a bell at the card's right.
 
 // Stacked states (PLAN.md 11): page-blocking > Claude needs you > permission > external app > saving (a page, a
 // password) > the insecure note, which AddressField shows only with no ask.
-var ranks = { leave: 0, signin: 0, proxy: 0, certificate: 0, passkey: 0, claude: 1, permission: 2, screen: 2, external: 3, save: 4, password: 4 };
+var ranks = { leave: 0, signin: 0, proxy: 0, certificate: 0, passkey: 0, claude: 1, permission: 2, screen: 2, external: 3, save: 4, password: 4, extension: 2 };
 
 // The queue as it shows: loud asks by rank, then in arrival order. The first is the one in the card.
 function order(asks) {
@@ -53,7 +57,7 @@ function preset(types, decided) {
 
 // What a waiting ask is, in the one word of its page's rail row (PLAN.md 3.20): "camera?", "sign in", "leave?"
 var askWords = { leave: "leave?", signin: "sign in", proxy: "sign in", certificate: "certificate?", passkey: "passkey",
-                 screen: "screen?", external: "open app?", save: "save?", password: "password?" };
+                 screen: "screen?", external: "open app?", save: "save?", password: "password?", extension: "add?" };
 var typeWords = [["screen", "screen?"], ["camera", "camera?"], ["microphone", "mic?"], ["location", "location?"],
                  ["notifications", "notify?"], ["clipboard", "clipboard?"]];
 function word(a) {
@@ -137,10 +141,48 @@ var failures = {
 // (rows, one picked), `notes` under them, `buttons` ({ label, choice }; none is the default), `actions` (text actions
 // on the ask's last line instead of buttons, { label, choice }), `negative` (what Esc picks) and `submit` (what Enter in
 // a field picks). An ask from another origin than the page's names itself.
+function extensionView(a, out, button) {
+    const name = a.name || "the extension";
+    switch (a.state) {
+    case "working":
+        out.lines = [{ text: "Getting the extension from Google" }, { text: "Its signature is checked before anything is added.", note: true }];
+        out.buttons = [button("Stop", "cancel")];
+        out.negative = "cancel";
+        break;
+    case "ask":
+        out.icon = a.icon || "";
+        out.lines = [{ text: (a.update ? "Update " : "Add ") + name + (a.update ? " to " + a.version + "?" : " to Thyris?") }];
+        if (!a.update && a.version)
+            out.lines.push({ text: "Version " + a.version, note: true });
+        out.lines.push({ text: a.words.length === 0 ? "It doesn't ask to read your pages or data." : a.update ? "It now also can:" : "It can:", note: true });
+        for (const w of a.words)
+            out.lines.push({ text: w, note: true });
+        if (a.source === "file")
+            out.notes = ["This one isn't from the Chrome Web Store, so the store hasn't checked it."];
+        out.buttons = [button(a.update ? "Update" : "Add to Thyris", "add"), button("Not now", "notnow")];
+        out.negative = "notnow";
+        break;
+    case "added":
+        out.lines = [{ text: (a.update ? "Updated " : "Added ") + name + ". Thyris reopens your pages to start it." },
+                     { text: "Otherwise it starts the next time Thyris opens.", note: true }];
+        out.buttons = [button("Reopen now", "reopen"), button("Later", "later")];
+        out.negative = "later";
+        break;
+    default:
+        out.lines = [{ text: a.problem || "That didn't work." }];
+        if (!/nothing (was|is) /i.test(a.problem || ""))
+            out.lines.push({ text: "Nothing was added.", note: true });
+        // a store file that failed to arrive or check out can be asked for again
+        out.buttons = a.source === "store" && !a.update ? [button("Try again", "retry"), button("OK", "ok")] : [button("OK", "ok")];
+        out.negative = "ok";
+    }
+    return out;
+}
+
 function view(a, pageHost) {
     const who = a.host && a.host !== pageHost ? a.host + " wants" : "Wants";
     const button = (label, choice) => ({ label: label, choice: choice });
-    const out = { lines: [], fields: [], options: [], notes: [], buttons: [], actions: [], negative: "cancel", submit: "" };
+    const out = { lines: [], fields: [], options: [], notes: [], buttons: [], actions: [], negative: "cancel", submit: "", icon: "" };
     switch (a.kind) {
     case "permission":
         out.lines = [{ text: who + " to " + wants(a.types, a.sound) }];
@@ -216,6 +258,9 @@ function view(a, pageHost) {
         out.lines = [{ text: "Save to the main profile?" }];
         out.buttons = [button("Save", "save"), button("Cancel", "cancel")];
         break;
+    // Add to Thyris: the page only offered the id; what is asked is what the checked file says it can do
+    case "extension":
+        return extensionView(a, out, button);
     // PLAN.md 7: a line in the card, "Save password for <host>? Save · Not now"
     case "password":
         out.lines = [{ text: "Save password for " + a.host + "?" }];

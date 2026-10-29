@@ -175,6 +175,17 @@ FocusScope {
         topPadding: section.large ? 4 : 9
         bottomPadding: foot.visible ? 4 : 12
 
+        // an extension's own icon above its name
+        Image {
+            visible: section.model !== null && section.model.icon !== ""
+            width: visible ? 32 : 0
+            height: visible ? 32 : 0
+            source: section.model ? section.model.icon : ""
+            sourceSize: Qt.size(64, 64)
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+        }
+        Item { width: 1; height: section.model !== null && section.model.icon !== "" ? 8 : 0 }
         // the request, 14 px; what follows it, 13 px colSubtext
         Repeater {
             model: section.model ? section.model.lines : []

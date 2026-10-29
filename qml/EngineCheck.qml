@@ -2760,13 +2760,28 @@ QtObject {
           act: () => { check.defaultBefore = check.ownRow("defaultBrowser").value; check.clickOwn("own:defaultBrowser:action") },
           expect: () => check.defaultBefore === "No" && /^xdg-mime default (browser|opsis-new-engine)\.desktop x-scheme-handler\/http x-scheme-handler\/https text\/html$/.test(Apps.lastDefaulted)
               && check.ownRow("defaultBrowser").value === "Yes" },
-        { name: "Extensions: Install from a folder (Files, dry run) installs it, listed On", wait: 4000,
-          act: () => { check.extDir = probe.fixtureFile("ext/manifest.json", JSON.stringify({ manifest_version: 3, name: "Check extension", version: "1.0" })).replace(/\/manifest\.json$/, "");
+        { name: "Extensions: Add from a folder (Files, dry run) asks first, in the sheet, and nothing is added yet", wait: 2500,
+          act: () => { check.extDir = probe.fixtureFile("ext/manifest.json", JSON.stringify({ manifest_version: 3, name: "Check extension", version: "1.0",
+                           permissions: ["history"], host_permissions: ["https://example.com/*"] })).replace(/\/manifest\.json$/, "");
               check.clickOwn("own:install:action"); check.later(() => Picker.answer([check.extDir])) },
-          expect: () => { const e = check.own().extensions.find(x => x.name === "Check extension");
-              probe.report("     extensions: " + JSON.stringify(check.own().extensions) + "; install path " + check.own().extensionManager.installPath);
-              return !!e && e.enabled && check.ownRow("ext:" + e.id).value === "On" } },
-        { name: "it shows beside the notes: start again later, the Web Store's Add button, what extensions read", wait: 600,
+          expect: () => { const a = app.currentView.ask; probe.grab(app, "extension-file-ask");
+              return !!a && a.kind === "extension" && a.state === "ask" && a.source === "file" && a.name === "Check extension"
+                  && a.words.join("|") === "Read and change your data on example.com|See your browsing history" && app.askSheet.ask !== null
+                  && check.own().extensions.length === 0 && Extensions.loadPaths().length === 0 } },
+        { name: "Not now leaves it as it was", wait: 800, act: () => app.currentView.answer(app.currentView.ask, "notnow"),
+          expect: () => !app.currentView.ask && check.own().extensions.length === 0 && Extensions.loadPaths().length === 0 },
+        { name: "Add from a folder again, then Add to Thyris: listed On, the ask says it was added", wait: 2500,
+          act: () => { check.clickOwn("own:install:action"); check.later(() => Picker.answer([check.extDir])) },
+          expect: () => !!app.currentView.ask && app.currentView.ask.state === "ask" },
+        { name: "(Add to Thyris)", wait: 800, act: () => app.currentView.answer(app.currentView.ask, "add"),
+          expect: () => { const e = check.own().extensions.find(x => x.name === "Check extension"); const a = app.currentView.ask;
+              return !!e && e.enabled && check.ownRow("ext:" + e.id).value === "On" && !!a && a.state === "added" && e.source === "file"
+                  && /^From a file, not checked by the store · version 1\.0 · added today$/.test(check.ownRow("ext:" + e.id).detail) } },
+        { name: "Reopen now: Thyris quits as Ctrl+Q does (counted in check mode) and starts again (counted)", wait: 1500,
+          act: () => { check.quits = app.quits; check.relaunches = WebStore.relaunches(); app.currentView.answer(app.currentView.ask, "reopen") },
+          expect: () => app.quits === check.quits + 1 && WebStore.relaunches() === check.relaunches + 1 && !app.currentView.ask },
+        { name: "(the run marked running again)", act: () => app.writeRun({}), expect: () => Store.load("run").clean === false },
+        { name: "it shows beside the notes: start again later, how to add from the store, what extensions read", wait: 600,
           expect: () => { probe.grab(app, "extensions-added"); const r = check.own().rows;
               return Extensions.loadPaths().length === 1 && r.some(x => x.key === "restart") && r.some(x => x.key === "store") && r.some(x => x.key === "access") && !r.some(x => x.key === "problem") } },
         { name: "its switch: disabled", wait: 1200,
@@ -2775,9 +2790,10 @@ QtObject {
         { name: "and Remove: uninstalled", wait: 2500,
           act: () => { const e = check.own().extensions.find(x => x.name === "Check extension"); check.clickOwn("own:ext:" + e.id + ":remove") },
           expect: () => !check.own().extensions.some(x => x.name === "Check extension") && Extensions.loadPaths().length === 0 },
-        { name: "Extensions: a folder with no extension in it says why", wait: 2500,
+        { name: "Extensions: a folder with no extension in it says why, and the ask has nothing to add", wait: 2500,
           act: () => { check.clickOwn("own:install:action"); check.later(() => Picker.answer([probe.fixtureDir("ext-empty")])) },
-          expect: () => { probe.grab(app, "extensions-problem"); const r = check.ownRow("problem"); return !!r && /no manifest\.json/.test(r.label) } },
+          expect: () => { probe.grab(app, "extensions-problem"); const a = app.currentView.ask; return !!a && a.state === "failed" && /no manifest\.json/.test(a.problem) && check.askText() === a.problem } },
+        { name: "(OK)", wait: 500, act: () => app.currentView.answer(app.currentView.ask, "ok"), expect: () => !app.currentView.ask },
         { name: "About: Thyris's version and the Chromium it is built on", wait: 200,
           expect: () => { const r = check.ownRow("identity");
               return !!r && r.value === "Version " + Engine.versions.opsis && Engine.versions.chromium !== "" && r.detail === "Built on Chromium " + Engine.versions.chromium.split(".")[0] } },
@@ -2886,6 +2902,74 @@ QtObject {
     // locked keyring; and no password or user name in a file of the throwaway data dir or in this run's output. The
     // steps never print them.
     readonly property var passwordSteps: [
+        { group: "webstore" },
+        check.server,
+        // Add to Thyris (src/webstore.*), against a Google of the check's own in WEBSTORE_FIXTURES: a signed extension (ids[0]) and one
+        // whose archive was changed after it was signed (ids[1]). `startExtension` is what the address card's "Add to Thyris" calls.
+        { name: "(a page, and the two fixture ids)", wait: 1500,
+          act: () => { check.ids = probe.env("WEBSTORE_FIXTURE_IDS").split(","); app.go(check.local("/plain"), "navigate") },
+          expect: () => check.ids.length === 2 && check.ids[0].length === 32 && !view.loading && view.title === "plain" && !view.ask },
+        { name: "an ordinary page offers no Add: its store item is empty", expect: () => view.storeItem === "" && WebStore.itemId("https://chromewebstore.google.com/detail/x/" + check.ids[0]) === check.ids[0]
+              && WebStore.itemId("https://evil.test/detail/x/" + check.ids[0]) === "" },
+        { name: "Add: the file is fetched from the stand-in and checked; the sheet says what it can do, and nothing is added yet", wait: 1500,
+          act: () => { WebStore.forgetRequests(); view.startExtension("store", check.ids[0], "") },
+          expect: () => { const a = view.ask; probe.grab(app, "extension-ask");
+              const r = !!a && { kind: a.kind === "extension", state: a.state === "ask", name: a.name === "Check extension", version: a.version === "1.0", sheet: check.sheetOut(),
+                  every: a.words[0] === "Read and change the pages you visit, on every site", history: a.words.indexOf("See your browsing history") > 0,
+                  text: check.askText() === "Add Check extension to Thyris?", two: WebStore.requests().length === 2,
+                  google: WebStore.requests().every(u => /^https:\/\/clients2\.google(usercontent)?\.com\//.test(u)),
+                  url: /response=redirect&prodversion=\d+\.\d+\.\d+\.\d+&acceptformat=crx3&x=id%3D[a-p]{32}%26installsource%3Dondemand%26uc$/.test(WebStore.requests()[0] ?? ""),
+                  none: !WebStore.added(check.ids[0]) && Extensions.loadPaths().length === 0 };
+              if (r) probe.report("     " + JSON.stringify(r) + " " + JSON.stringify(WebStore.requests()));
+              return !!r && Object.values(r).every(v => v) } },
+        { name: "F6, Tab, Enter on Not now: nothing is added and the sheet goes", wait: 700,
+          act: () => { probe.press(Qt.Key_F6, 0); probe.press(Qt.Key_Tab, 0); probe.press(Qt.Key_Return, 0) },
+          expect: () => !view.ask && check.sheetIn() && !WebStore.added(check.ids[0]) && Extensions.loadPaths().length === 0 },
+        { name: "Add again; F6, Enter on Add to Thyris: it is listed, from the store, and the ask turns to Added, Reopen now", wait: 1500,
+          act: () => { check.relaunches = WebStore.relaunches(); view.startExtension("store", check.ids[0], ""); check.later(() => { probe.press(Qt.Key_F6, 0); probe.press(Qt.Key_Return, 0) }) },
+          expect: () => { const a = view.ask; probe.grab(app, "extension-added");
+              return !!a && a.state === "added" && WebStore.added(check.ids[0]) && Extensions.loadPaths().length === 1 && Extensions.restartNeeded
+                  && Extensions.extensions[0].source === "store" && Extensions.extensions[0].id === check.ids[0] && Extensions.extensions[0].version === "1.0"
+                  && check.askText().startsWith("Added Check extension.") } },
+        { name: "Later leaves it to the next start (no reopen); asking for the same extension again says it is added already", wait: 1800,
+          act: () => { view.answer(view.ask, "later"); check.later(() => view.startExtension("store", check.ids[0], "")) },
+          expect: () => { probe.report("     ask " + JSON.stringify(view.ask)); return !!view.ask && view.ask.state === "failed" && /already added/.test(view.ask.problem) && WebStore.relaunches() === check.relaunches } },
+        { name: "(OK)", wait: 500, act: () => view.answer(view.ask, "ok"), expect: () => !view.ask },
+        { name: "a file changed after it was signed is refused, in words, and left nothing", wait: 1500,
+          act: () => view.startExtension("store", check.ids[1], ""),
+          expect: () => { const a = view.ask; probe.grab(app, "extension-failed");
+              return !!a && a.state === "failed" && /didn't check out, so nothing was added/.test(a.problem) && check.askText() === a.problem
+                  && !WebStore.added(check.ids[1]) && Extensions.loadPaths().length === 1 } },
+        { name: "(OK)", wait: 500, act: () => view.answer(view.ask, "ok"), expect: () => !view.ask },
+        { name: "an id Google has no file for says so", wait: 1500,
+          act: () => view.startExtension("store", "a".repeat(32), ""),
+          expect: () => !!view.ask && view.ask.state === "failed" && /no extension at that address/.test(view.ask.problem) },
+        { name: "(OK)", wait: 500, act: () => view.answer(view.ask, "ok"), expect: () => !view.ask },
+        { name: "an ask whose page loads another page is dropped, and its staged files with it", wait: 2500,
+          act: () => { view.startExtension("store", check.ids[0].replace(/^./, "x"), ""); view.startExtension("store", check.ids[1], ""); app.go(check.local("/asks"), "navigate") },
+          expect: () => !view.loading && !view.ask },
+        { name: "a store extension is removed in Settings and its files go", wait: 2500,
+          act: () => { app.openOwn("settings", "extensions") },
+          expect: () => { const e = check.own().extensions.find(x => x.id === check.ids[0]); const r = e ? check.ownRow("ext:" + e.id) : null;
+              probe.grab(app, "extensions-store");
+              return !!e && !!r && /^Chrome Web Store · version 1\.0 · added today$/.test(r.detail) } },
+        { name: "Remove", wait: 2000, act: () => check.clickOwn("own:ext:" + check.ids[0] + ":remove"),
+          expect: () => !WebStore.added(check.ids[0]) && Extensions.loadPaths().length === 0 && probe.entries(probe.env("XDG_DATA_HOME") + "/browser/extensions/added").indexOf(check.ids[0]) < 0 },
+        { group: "extrun" },
+        check.server,
+        // WEBSTORE_LOAD=<folder>: an extension with a content script, loaded as main.cpp loads the added ones. It runs on a page of
+        // the main profile and not in a private window (an extension is off there unless it is allowed).
+        { name: "(a page in the main window)", wait: 2500, act: () => { check.runExt = probe.env("WEBSTORE_LOAD") !== ""; app.go(check.local("/plain"), "new", "", "plain") },
+          expect: () => view.title === "plain" && !view.loading },
+        { name: "the extension's content script ran on it, and the engine gave the extension the id its manifest key makes (the store's)", expect: () => true,
+          page: "document.documentElement.getAttribute('data-thyris-ext')", pageExpect: v => !check.runExt || v === probe.env("WEBSTORE_FIXTURE_IDS").split(",")[0] },
+        { name: "a private window opens (Ctrl+Shift+N)", key: Qt.Key_N, mods: ctrl | Qt.ShiftModifier, wait: 1500,
+          expect: () => app.privateWindows.length === 1 && check.priv().offTheRecord },
+        { name: "(a page in it)", wait: 2500, act: () => { probe.back(check.priv()); check.priv().go(check.local("/plain"), "new", "", "plain") },
+          expect: () => check.priv().currentView.title === "plain" && !check.priv().currentView.loading },
+        { name: "the extension did not run in the private window", expect: () => true, pageIn: () => check.priv().currentView,
+          page: "document.documentElement.getAttribute('data-thyris-ext')", pageExpect: v => v == null },
+        { name: "(the private window closed)", wait: 1000, act: () => { check.priv().closePrivate(); probe.back(app) }, expect: () => app.privateWindows.length === 0 },
         { group: "passwords" },
         check.server,
         { setup: true, name: "(the main window focused)", act: () => probe.back(app), expect: () => app.active },
@@ -5464,6 +5548,9 @@ QtObject {
     property int failures: 0
     property real began: 0
     property var view: app.currentView
+    property int relaunches: 0         // the extension checks: WebStore.relaunches() before Reopen now
+    property var ids: []               // the extension checks: the two fixture extensions' ids
+    property bool runExt: false        // the extension checks: an extension is loaded into the engine (WEBSTORE_LOAD)
 
     property Timer loaded: Timer {
         interval: 200

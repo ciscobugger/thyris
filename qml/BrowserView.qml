@@ -828,7 +828,7 @@ WebEngineView {
         // (a redirect, a script's location), and goes with a load of yours: a link, an address, back or a reload
         const T = WebEngineNavigationRequest;
         const keepsLogin = navigationType === T.FormSubmittedNavigation || navigationType === T.OtherNavigation;
-        const kept = a => a.kind === "leave" || a.kind === "password" && keepsLogin;
+        const kept = a => a.kind === "leave" || a.kind === "password" && keepsLogin || a.kind === "extension" && a.state === "added";
         keptLoad = { thisLoad: thisLoad, asks: asks.filter(a => !kept(a)), pendingApps: pendingApps, pickedFiles: pickedFiles,
                      dialogs: dialogs, dialogsBlocked: dialogsBlocked, blockedPopups: blockedPopups, answered: reset ? [] : answered,
                      reader: reader, article: article, articleAt: articleAt, editedKept: editedKept };
@@ -907,6 +907,78 @@ WebEngineView {
             view.asked(a);
     }
     function remove(a) { asks = asks.filter(x => x !== a) }
+
+    // Add to Thyris (WebStore, Asks.js "extension"). The ask is Thyris's own: a store page only supplies the id, and nothing
+    // here reads anything else from the page. A job whose ask has gone (a new load, Stop, a closed page) is thrown away.
+    readonly property string storeItem: profile.offTheRecord ? "" : WebStore.itemId(url)
+    readonly property bool extensionAsking: asks.some(x => x.kind === "extension")
+    property var extTickets: []
+    onAsksChanged: {
+        if (extTickets.length === 0)
+            return;
+        const live = extTickets.filter(t => asks.some(x => x.kind === "extension" && x.ticket === t));
+        extTickets.filter(t => live.indexOf(t) < 0).forEach(t => WebStore.discard(t));
+        if (live.length !== extTickets.length)
+            extTickets = live;
+    }
+    function startExtension(source, id, path) {
+        if (extensionAsking)
+            return;
+        const a = { kind: "extension", state: "working", source: source, id: id, ticket: 0, words: [],
+                    origin: Asks.originOf(String(url)), host: source === "store" ? RailRows.split(String(url)).host : "Thyris" };
+        enqueue(a);
+        const ticket = source === "store" ? WebStore.fromStore(id) : WebStore.fromFile(path);
+        extTickets = extTickets.concat([ticket]);
+        replace(a, Object.assign({}, a, { ticket: ticket }));
+    }
+    function addFromStore() { if (storeItem !== "") startExtension("store", storeItem, "") }
+    function addFromFile(path) { startExtension("file", "", path) }
+    // an update that asks for more than the old version could (WebStore.updateAsks)
+    function askUpdate(info) {
+        enqueue({ kind: "extension", state: "ask", update: true, source: "store", id: info.id, name: info.name, version: info.version,
+                  icon: info.icon, words: info.words, ticket: 0, origin: "", host: "Thyris" });
+    }
+    Connections {
+        target: view.extTickets.length > 0 ? WebStore : null
+        function onPrepared(ticket, info) {
+            const a = view.asks.find(x => x.kind === "extension" && x.ticket === ticket);
+            if (a)
+                view.replace(a, Object.assign({}, a, { state: "ask", name: info.name, version: info.version, icon: info.icon, words: info.words, source: info.source }));
+        }
+        function onRefused(ticket, problem) {
+            const a = view.asks.find(x => x.kind === "extension" && x.ticket === ticket);
+            if (a)
+                view.replace(a, Object.assign({}, a, { state: "failed", problem: problem }));
+        }
+    }
+    // the person's answer to the ask in each of its states; true when the ask goes on in another state
+    function answerExtension(a, choice) {
+        if (a.state === "working") {
+            WebStore.discard(a.ticket);
+        } else if (a.state === "ask") {
+            if (a.update) {
+                WebStore.answerUpdate(a.id, choice === "add");
+                if (choice === "add") {
+                    replace(a, Object.assign({}, a, { state: "added" }));
+                    return true;
+                }
+            } else if (choice === "add") {
+                const r = WebStore.add(a.ticket);
+                replace(a, Object.assign({}, a, r.ok ? { state: "added", name: r.name } : { state: "failed", problem: r.problem }));
+                return true;
+            } else {
+                WebStore.discard(a.ticket);
+            }
+        } else if (a.state === "added" && choice === "reopen") {
+            view.reopenWanted();
+        } else if (a.state === "failed" && choice === "retry") {
+            remove(a);
+            startExtension(a.source, a.id, "");
+            return true;
+        }
+        return false;
+    }
+    signal reopenWanted()
     function replace(a, b) { asks = asks.map(x => x === a ? b : x) }
     // the bell at the card's right: the quiet ask comes out
     function unquiet() {
@@ -1004,6 +1076,10 @@ WebEngineView {
         case "save":
             if (choice === "save")
                 view.saveWanted(a);
+            break;
+        case "extension":
+            if (answerExtension(a, choice))
+                return;
             break;
         case "password":
             if (choice === "save")

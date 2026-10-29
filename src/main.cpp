@@ -12,6 +12,7 @@
 #include "picker.h"
 #include "printing.h"
 #include "shots.h"
+#include "webstore.h"
 #include "zen.h"
 #include "chromeimport.h"
 
@@ -129,6 +130,10 @@ int main(int argc, char *argv[]) {
         // the Zen import checks make up a Zen folder of their own (EngineCheck::zenProfile)
         Zen::noUserProfile = true;
         ChromeImport::noUserProfile = true;
+        // the extension store's checks (WEBSTORE_FIXTURES): a Google of their own in a folder, and Reopen only counted
+        WebStore::dryRun = true;
+        if (qEnvironmentVariableIsSet("WEBSTORE_FIXTURES"))
+            WebStore::useFixtures(qEnvironmentVariable("WEBSTORE_FIXTURES"));
         // a copy of what this process and the engine's write, so a check can say no password reached it
         EngineCheck::captureOutput();
         // Settings' Update now runs a script of the check's own, and spell check converts the check's own dictionary
@@ -234,12 +239,17 @@ int main(int argc, char *argv[]) {
     const QString ubol = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/browser/extensions/ubol");
     // The extensions a person added in Settings (Extensions) come with it: the engine has no manager, it loads the folders
     // named here at its start.
+    // the extension checks: WEBSTORE_LOAD names a folder the engine runs an extension from (the "extrun" group)
+    if (checkMode && qEnvironmentVariableIsSet("WEBSTORE_LOAD"))
+        switches += " --load-extension=" + qgetenv("WEBSTORE_LOAD");
     if (!checkMode && !shotMode) {
         QStringList load;
         if (QFile::exists(ubol + QStringLiteral("/manifest.json"))) {
             load << ubol;
             Adblock::extensionBlocks = true;
         }
+        // updates agreed to replace their old versions before the engine reads the list
+        WebStore::startUp();
         load += Extensions::loadPaths();
         if (!load.isEmpty())
             switches += " --load-extension=" + QFile::encodeName(load.join(u','));

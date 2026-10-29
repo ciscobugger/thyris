@@ -36,6 +36,9 @@ Rectangle {
     readonly property int askCount: Asks.order(asks).length
     readonly property var quietAsk: asks.find(a => a.quiet) ?? null
     property var inUse: []
+    // Add to Thyris (BrowserView): set by the shots on a store page
+    property string storeItem: ""
+    readonly property bool extensionAsking: asks.some(a => a.kind === "extension")
     property var sites
     property bool closing: false
     function answer(a) { asks = asks.filter(x => x !== a) }
@@ -57,6 +60,7 @@ Rectangle {
     property var sample: null
     property var stops: []
     signal closeWanted()
+    signal reopenWanted()
     signal processStopped(string status, int code)
     // reader view (PLAN.md 3.9), set by the shots: whether the page has an article, and shows it
     property string article: ""

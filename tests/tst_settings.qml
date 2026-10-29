@@ -333,4 +333,15 @@ TestCase {
                 "a process under the browser that is not Chromium's, by its name");
         compare(Processes.processName({ pid: 61, parent: 1, type: "", service: "", name: "" }), "Process 61");
     }
+
+    function test_extensionRowsSayWhereTheyCameFrom() {
+        const day = 86400000;
+        const fromStore = { id: "a".repeat(32), name: "Block It", enabled: true, error: "", source: "store", version: "2.0", added: now - 9 * day, updated: now - 3 * day, waiting: false };
+        const fromFile = { id: "0123456789ab", name: "Mine", enabled: false, error: "", source: "file", version: "0.3", added: now - day, updated: now - day, waiting: true };
+        compare(Settings.extensionDetail(fromStore, now), "Chrome Web Store · version 2.0 · updated 3 days ago");
+        compare(Settings.extensionDetail(fromFile, now), "From a file, not checked by the store · version 0.3 · added yesterday · update waits for the next start");
+        const rows = Settings.rows(state({ extensions: [fromStore, fromFile], extensionsInstall: true }), "", "").filter(r => r.key.startsWith("ext:"));
+        compare(rows.map(r => r.label + "|" + r.value), ["Block It|On", "Mine|Off"]);
+        compare(rows[0].detail, "Chrome Web Store · version 2.0 · updated 3 days ago");
+    }
 }

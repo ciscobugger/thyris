@@ -1884,6 +1884,7 @@ Window {
             v.closeWanted.connect(() => root.finishClose(pageId));
             v.processStopped.connect((status, code) => root.pageStopped(v, status, code, v === root.currentView && !v.parked));
             v.saveWanted.connect(a => root.saveToMain(a));
+            v.reopenWanted.connect(() => root.reopenNow());
             v.loginFailed.connect(text => root.showNotice({ text: text, action: "", where: "card" }, 4000));
             // window.print() of the page on screen: the print card, as Ctrl+P
             v.printWanted.connect(() => { if (v === root.currentView && !v.parked) root.openPrint() });
@@ -3558,6 +3559,8 @@ Window {
             if (!railPinned)
                 peek.open = true;
             rail.focusAsk();
+        } else if (rail.addFocused && !shownAsk) {
+            editAddress();
         } else if (shownAsk) {
             // the ask's sheet over the page, folded or docked
             askSheet.section.focusFirst();
@@ -3567,6 +3570,11 @@ Window {
             if (!railPinned)
                 peek.open = true;
             rail.focusFill();
+        } else if (rail.addShown) {
+            // a store page's "Add to Thyris" line, in the same card, before the address
+            if (!railPinned)
+                peek.open = true;
+            rail.focusAdd();
         } else {
             editAddress();
         }
@@ -4108,6 +4116,26 @@ Window {
         root.visible = false;
         hub.privateClosed(root);
     }
+    // Reopen now (the extension ask, Asks.js): the engine takes up extensions only as it starts, so Thyris quits the way Ctrl+Q
+    // does (every window, its pages with where you stopped and how far you had scrolled, pinned pages and sign-ins are kept for
+    // the next start) and starts again. The new Thyris waits for this one's profile as any second start does (Instance.start).
+    function reopenNow() {
+        hub.quitAll();
+        WebStore.relaunch();
+    }
+    // An update that asks for more than the old version could waits for the person's word (WebStore.updateAsks): asked once, in
+    // the page on screen. Updates found at an earlier run are asked about a few seconds after the start.
+    Timer { id: updateAsker; interval: 12000; onTriggered: root.askUpdates() }
+    Connections {
+        target: root.primary ? null : WebStore
+        function onUpdatesToAsk() { root.askUpdates() }
+    }
+    function askUpdates() {
+        const w = lastMain();
+        if (!w || w.noPage || !w.currentView)
+            return;
+        WebStore.updateAsks().forEach(u => w.currentView.askUpdate(u));
+    }
     // Ctrl+Q, or the last main window closing: every window stays as it is for the next start. Where each window is
     // is asked of Hyprland first, for restore (Backdrop answers within 500 ms). Check mode counts the quit instead,
     // and goes on.
@@ -4492,6 +4520,11 @@ Window {
         }
         root.pendingWindows = sessionModel.loadedWindows;
         downloadModel.schedule();
+        // the store's extensions: their newest versions are asked of Google at start and once a day (WebStore)
+        if (!root.engineCheck) {
+            WebStore.startUpdates();
+            updateAsker.start();
+        }
         // DevTools used in the last week: a spare is ready 8 s after the start, so the first F12 shows at once too
         const devTools = Store.load("devtools");
         if (devTools && Date.now() - devTools.used < 7 * 86400000)

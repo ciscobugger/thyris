@@ -129,7 +129,8 @@ OwnPage {
     property var extensions: []
     function readExtensions() {
         extensions = extensionManager ? extensionManager.extensions.filter(e => e.isInstalled)
-            .map(e => ({ id: e.id, name: e.name, enabled: e.isEnabled, error: e.error })) : [];
+            .map(e => ({ id: e.id, name: e.name, enabled: e.isEnabled, error: e.error, source: e.source ?? "file", version: e.version ?? "",
+                         added: e.added ?? 0, updated: e.updated ?? 0, waiting: e.waiting ?? false })) : [];
     }
     onExtensionManagerChanged: readExtensions()
     readonly property var state: {
@@ -443,8 +444,8 @@ OwnPage {
             settings.picking = "";
             if (what === "folder" && path && Facts.isFolder(path))
                 settings.prefs.set("folder", path);
-            else if (what === "extension" && path && settings.extensionManager)
-                settings.extensionManager.installExtension(path);
+            else if (what === "extension" && path && settings.view)
+                settings.view.addFromFile(path);        // the ask shows what it can do (WebStore, Asks.js)
         }
     }
 
@@ -816,7 +817,7 @@ OwnPage {
                 id: choiceText
                 width: parent.width - 48 - choiceRight.width
                 label: choiceRow.row.label
-                detail: choiceRow.failed ? String(choiceRow.row.picked) : ""
+                detail: choiceRow.failed ? String(choiceRow.row.picked) : choiceRow.row.detail ?? ""
             }
             Row {
                 id: choiceRight

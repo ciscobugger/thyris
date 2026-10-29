@@ -1,12 +1,14 @@
 #include "extensions.h"
 
+#include "crx.h"
+
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QProcess>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
@@ -44,7 +46,13 @@ QStringList Extensions::loadPaths() {
     return paths;
 }
 
-Extensions::Extensions(QObject *parent) : QObject(parent) {}
+Extensions::Extensions(QObject *parent) : QObject(parent) { s_self = this; }
+
+void Extensions::announce() {
+    s_restart = true;
+    if (s_self)
+        emit s_self->changed();
+}
 
 QVariantList Extensions::extensions() const {
     QVariantList out;
@@ -54,15 +62,20 @@ QVariantList Extensions::extensions() const {
                            {QStringLiteral("name"), e.value(QStringLiteral("name")).toString()},
                            {QStringLiteral("isInstalled"), true},
                            {QStringLiteral("isEnabled"), e.value(QStringLiteral("enabled")).toBool()},
-                           {QStringLiteral("error"), QString()}};
+                           {QStringLiteral("error"), QString()},
+                           {QStringLiteral("source"), e.value(QStringLiteral("source")).toString(QStringLiteral("file"))},
+                           {QStringLiteral("version"), e.value(QStringLiteral("version")).toString()},
+                           {QStringLiteral("added"), e.value(QStringLiteral("added")).toDouble()},
+                           {QStringLiteral("updated"), e.value(QStringLiteral("updated")).toDouble()},
+                           {QStringLiteral("waiting"), e.value(QStringLiteral("pending")).toObject().value(QStringLiteral("approved")).toBool()}};
     }
     return out;
 }
 
 QString Extensions::idOf(const QVariant &info) {
-    // only ids this class made name a folder: no path in one is ever followed
+    // only ids this class or WebStore made name a folder: no path in one is ever followed
     const QString id = info.toMap().value(QStringLiteral("id")).toString();
-    static const QRegularExpression plain(QStringLiteral("^[0-9a-f]{12}$"));
+    static const QRegularExpression plain(QStringLiteral("^([0-9a-f]{12}|[a-p]{32})$"));
     return plain.match(id).hasMatch() ? id : QString();
 }
 
@@ -72,8 +85,17 @@ void Extensions::fail(const QString &why) {
     emit changed();
 }
 
+QJsonObject Extensions::manifestOf(const QString &dir) {
+    QFile file(dir + QStringLiteral("/manifest.json"));
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QJsonParseError parse;
+    const QJsonObject manifest = QJsonDocument::fromJson(file.readAll(), &parse).object();
+    return parse.error == QJsonParseError::NoError ? manifest : QJsonObject();
+}
+
 // The name a manifest shows: its own, or a locale's message when the name is a "__MSG_x__" key
-static QString nameOf(const QString &dir, const QJsonObject &manifest) {
+QString Extensions::nameOf(const QString &dir, const QJsonObject &manifest) {
     QString name = manifest.value(QStringLiteral("name")).toString();
     if (name.startsWith(QLatin1String("__MSG_")) && name.endsWith(QLatin1String("__"))) {
         const QString key = name.mid(6, name.size() - 8);
@@ -114,44 +136,78 @@ static bool copyTree(const QString &from, const QString &to) {
     return true;
 }
 
-// `from` holds manifest.json (the folder chosen, or what a .zip held); `move`: it is Thyris's own scratch folder
-void Extensions::add(const QString &from, bool move) {
-    QFile file(from + QStringLiteral("/manifest.json"));
-    if (!file.open(QIODevice::ReadOnly))
-        return fail(tr("That has no manifest.json. Choose the extension's own folder, or its .zip."));
-    QJsonParseError parse;
-    const QJsonObject manifest = QJsonDocument::fromJson(file.readAll(), &parse).object();
-    if (parse.error != QJsonParseError::NoError || manifest.isEmpty())
-        return fail(tr("The extension's manifest.json can't be read."));
+bool Extensions::commit(const QString &from, bool move, const Added &meta, QString *problem, QVariantMap *info) {
+    const auto fail = [problem](const QString &why) {
+        if (problem)
+            *problem = why;
+        return false;
+    };
+    const QJsonObject manifest = manifestOf(from);
+    if (manifest.isEmpty())
+        return fail(QFile::exists(from + QStringLiteral("/manifest.json")) ? tr("The extension's description can't be read.")
+                                                                           : tr("That isn't an extension. Choose the extension's own folder, or its .zip."));
     if (manifest.value(QStringLiteral("manifest_version")).toInt() != 3)
-        return fail(tr("That extension is an older kind (Manifest 2), which Thyris can't run."));
+        return fail(tr("That extension is built for an older version of Chrome, which Thyris can't run. A newer or \"Lite\" version of it may work."));
     const QString name = nameOf(from, manifest);
     if (name.isEmpty())
         return fail(tr("The extension has no name."));
     QJsonArray list = read();
-    for (const QJsonValue &v : std::as_const(list))
-        if (v.toObject().value(QStringLiteral("name")).toString() == name)
+    const bool fromStore = meta.source == u"store";
+    for (const QJsonValue &v : std::as_const(list)) {
+        const QJsonObject e = v.toObject();
+        if (e.value(QStringLiteral("name")).toString() == name || (fromStore && e.value(QStringLiteral("id")).toString() == meta.id))
             return fail(tr("%1 is already added.").arg(name));
+    }
 
-    const QString id = QUuid::createUuid().toString(QUuid::Id128).left(12);
+    const QString id = fromStore ? meta.id : QUuid::createUuid().toString(QUuid::Id128).left(12);
     const QString to = store() + u'/' + id;
     QDir().mkpath(store());
+    // a folder already there is not ours to replace
+    if (QFileInfo::exists(to))
+        return fail(tr("%1 is already added.").arg(name));
     if (move ? !QDir().rename(from, to) : !copyTree(from, to)) {
         QDir(to).removeRecursively();
         return fail(tr("%1 couldn't be copied into Thyris.").arg(name));
     }
     dropLinks(to);
-    list.append(QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("enabled"), true}});
+    // A file's own "key" would give it a store extension's id (the keys are public); only the store path writes one.
+    if (!fromStore && manifest.contains(QStringLiteral("key"))) {
+        QJsonObject clean = manifest;
+        clean.remove(QStringLiteral("key"));
+        QFile f(to + QStringLiteral("/manifest.json"));
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate) || f.write(QJsonDocument(clean).toJson(QJsonDocument::Compact)) < 0) {
+            QDir(to).removeRecursively();
+            return fail(tr("%1 couldn't be copied into Thyris.").arg(name));
+        }
+    }
+    const double now = double(QDateTime::currentMSecsSinceEpoch());
+    QJsonObject entry{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("enabled"), true},
+                      {QStringLiteral("source"), meta.source}, {QStringLiteral("version"), manifest.value(QStringLiteral("version")).toString()},
+                      {QStringLiteral("added"), now}, {QStringLiteral("updated"), now}};
+    if (fromStore)
+        entry.insert(QStringLiteral("key"), meta.key);
+    list.append(entry);
     if (!save(list)) {
         QDir(to).removeRecursively();
         return fail(tr("The list of extensions couldn't be saved."));
     }
+    if (info)
+        *info = QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("isInstalled"), true},
+                            {QStringLiteral("isEnabled"), true}, {QStringLiteral("error"), QString()}};
+    return true;
+}
+
+// `from` holds manifest.json (the folder chosen, or what a .zip held); `move`: it is Thyris's own scratch folder
+void Extensions::add(const QString &from, bool move) {
+    QString problem;
+    QVariantMap info;
+    if (!commit(from, move, Added(), &problem, &info))
+        return fail(problem);
     m_problem.clear();
-    m_restart = true;
+    s_restart = true;
     m_busy = false;
     emit changed();
-    emit installFinished(QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("isInstalled"), true},
-                                     {QStringLiteral("isEnabled"), true}, {QStringLiteral("error"), QString()}});
+    emit installFinished(info);
     emit loadFinished();
 }
 
@@ -166,36 +222,26 @@ void Extensions::installExtension(const QString &path) {
     }
     if (!info.isFile() || info.suffix().compare(QLatin1String("zip"), Qt::CaseInsensitive) != 0)
         return fail(tr("Choose an extension's folder or a .zip file."));
-    // bsdtar (libarchive) reads a .zip and refuses paths that climb out of the folder it extracts into
+    QFile zip(info.absoluteFilePath());
+    if (info.size() > (64 << 20) || !zip.open(QIODevice::ReadOnly))
+        return fail(tr("The .zip couldn't be opened."));
     const QString scratch = store() + QStringLiteral("/.incoming-") + QUuid::createUuid().toString(QUuid::Id128).left(8);
     QDir().mkpath(scratch);
     m_busy = true;
-    auto *tar = new QProcess(this);
-    connect(tar, &QProcess::errorOccurred, this, [this, tar, scratch](QProcess::ProcessError e) {
-        if (e != QProcess::FailedToStart)
-            return;
+    const QString why = Zip::extract(zip.readAll(), scratch);
+    if (!why.isEmpty()) {
         QDir(scratch).removeRecursively();
-        tar->deleteLater();
-        fail(tr("The .zip couldn't be opened."));
-    });
-    connect(tar, &QProcess::finished, this, [this, tar, scratch](int code, QProcess::ExitStatus status) {
-        tar->deleteLater();
-        if (code != 0 || status != QProcess::NormalExit) {
-            QDir(scratch).removeRecursively();
-            return fail(tr("The .zip couldn't be opened."));
-        }
-        dropLinks(scratch);
-        // the manifest at the top, or in the one folder a zip of a folder holds
-        QString root = scratch;
-        if (!QFile::exists(root + QStringLiteral("/manifest.json"))) {
-            const QStringList dirs = QDir(scratch).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-            if (dirs.size() == 1)
-                root = scratch + u'/' + dirs.first();
-        }
-        add(root, true);
-        QDir(scratch).removeRecursively();
-    });
-    tar->start(QStringLiteral("bsdtar"), {QStringLiteral("-xf"), info.absoluteFilePath(), QStringLiteral("-C"), scratch});
+        return fail(why);
+    }
+    // the manifest at the top, or in the one folder a zip of a folder holds
+    QString root = scratch;
+    if (!QFile::exists(root + QStringLiteral("/manifest.json"))) {
+        const QStringList dirs = QDir(scratch).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        if (dirs.size() == 1)
+            root = scratch + u'/' + dirs.first();
+    }
+    add(root, true);
+    QDir(scratch).removeRecursively();
 }
 
 void Extensions::uninstallExtension(const QVariant &info) {
@@ -209,7 +255,8 @@ void Extensions::uninstallExtension(const QVariant &info) {
     if (kept.size() == list.size() || !save(kept))
         return;
     QDir(store() + u'/' + id).removeRecursively();
-    m_restart = true;
+    QDir(store() + QStringLiteral("/.update-") + id).removeRecursively();
+    s_restart = true;
     emit changed();
     emit uninstallFinished();
 }
@@ -230,7 +277,7 @@ void Extensions::setExtensionEnabled(const QVariant &info, bool enabled) {
     }
     if (!found || !save(list))
         return;
-    m_restart = true;
+    s_restart = true;
     emit changed();
     if (enabled)
         emit loadFinished();
