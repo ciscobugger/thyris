@@ -463,6 +463,16 @@ TestCase {
         compare(RailRows.menu(s, "page", solo).find(e => e.sub).sub.map(e => e.text), ["a"], "already alone: no New thread");
     }
 
+    function test_tabsPlaceLine() {
+        const s = make([["a", 3], ["b", 1]]), p = s.threads[0].pages[0];
+        compare(texts(RailRows.menu(s, "page", p, false, false)).slice(-2), ["-", "Show tabs along the top"]);
+        compare(texts(RailRows.menu(s, "page", p, false, true)).slice(-2), ["-", "Show tabs on the side"]);
+        compare(texts(RailRows.menu(s, "thread", s.threads[0].id, false, false)).slice(-1), ["Show tabs along the top"]);
+        compare(texts(RailRows.menu(s, "tabs", "", false, false)), ["Show tabs along the top"]);
+        compare(texts(RailRows.menu(s, "tabs", "", false, true)), ["Show tabs on the side"]);
+        compare(RailRows.menu(s, "tabs", ""), [], "no tabs shown: no line");
+    }
+
     function test_otherMenus() {
         const s = make([["a", 2]]);
         compare(texts(RailRows.menu(s, "thread", s.threads[0].id)), ["Rename", "New page here", "Save task", "Fold", "-", "Close task"]);

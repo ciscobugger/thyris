@@ -223,11 +223,23 @@ QtObject {
         },
         // Settings > Tabs: the tabs along the top, the rail folded; the same with a task's tab held for a move, a tab's menu, and the choice in Settings
         "tabs-top": () => { everyday(); topTabs(() => {}); },
+        // right-click on the tabs: a tab's menu and the empty part's, along the side and along the top, each with the line that moves them
+        "tabs-menu-side": () => { everyday(); rail.showMenu("p:" + session.threads[0].pages[0]); },
+        "tabs-menu-side-empty": () => { everyday(); rail.showTabsMenu(); },
+        "tabs-menu-top-empty": () => { everyday(); topTabs(() => tabStrip.showTabsMenu()); },
+        // the tabs on their way: half-way to the top, half-way to the side
+        "tabs-move-to-top": () => { everyday(); later(() => { app.windowTabsOut.take(rail); app.shots.render(); later(() => { app.placeTabs(true, 0.5); later(() => tabStrip.hideTip(tabStrip.listView.itemAtIndex(0))); }); }); },
+        "tabs-move-to-side": () => { everyday(); topTabs(() => { app.windowTabsOut.take(tabStrip); app.windowTabsOutRow.take(app.windowAddressRow); app.shots.render(); later(() => app.placeTabs(false, 0.5)); }); },
         "tabs-top-hover": () => { everyday(); topTabs(() => { tabStrip.hoverKey = "p:" + session.threads[0].pages[1]; }); },
         "tabs-top-menu": () => { everyday(); topTabs(() => tabStrip.showMenu("p:" + session.threads[0].pages[1], false)); },
         "tabs-top-drag": () => { everyday(); topTabs(() => { const it = tabStrip.listView.itemAtIndex(7); tabStrip.startDrag(session.threads[0].pages[0], 0); tabStrip.moveDrag(it.mapToItem(tabStrip, 2, 8).x); }); },
         "tabs-top-keys": () => { everyday(); topTabs(() => tabStrip.focusList()); },
         "tabs-top-many": () => { everyday(); topTabs(() => {}); for (let i = 0; i < 14; i++) { const id = session.addPage(session.threads[1].id, "https://example.org/many/" + i, ""); session.update(id, { title: "A page with a long title number " + i }); } },
+        "tabs-top-folded": () => { everyday(); session.setOpen(session.threads[0].id, false); topTabs(() => {}); },
+        "tabs-top-group-menu": () => { everyday(); topTabs(() => tabStrip.showMenu("t:" + session.threads[0].id, false)); },
+        "tabs-top-typing": () => { everyday(); topTabs(() => app.editAddress("libcamera agc")); },
+        "tabs-top-store": () => { storePage(); topTabs(() => {}); },
+        "tabs-top-loading": () => { everyday(); topTabs(() => loading(0.6)); },
         "tabs-top-peek": () => { everyday(); topTabs(() => { hoverPeek.open = true }); },
         "tabs-settings": () => { everyday(); settings("pages"); },
         "tabs-settings-top": () => { everyday(); topTabs(() => {}); settings("pages"); },

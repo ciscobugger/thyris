@@ -74,6 +74,11 @@ void Shots::capture(const QString &name, QObject *other) {
     QTimer::singleShot(0, this, &Shots::next);
 }
 
+void Shots::render() {
+    if (auto *window = m_engine ? qobject_cast<QQuickWindow *>(m_engine->rootObjects().value(0)) : nullptr)
+        window->grabWindow();
+}
+
 void Shots::fail(const QString &message) {
     std::fprintf(stderr, "shots: %s: %s\n", qPrintable(m_current), qPrintable(message));
     m_failures++;

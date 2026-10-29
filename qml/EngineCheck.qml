@@ -46,6 +46,7 @@ QtObject {
     readonly property string plain: "data:text/html," + encodeURIComponent("<!doctype html><title>plain</title><p>nothing to edit")
 
     property var tabIds: []
+    property var tabsBefore: null           // the tabs' move: where the session stood
     property string closing: ""
     property int tabCursor: -1
     // the tab of page `id` in the strip, and its centre in window coordinates
@@ -260,18 +261,61 @@ QtObject {
               app.show(check.tabIds[0]);
           },
           expect: () => check.tabIds.length === 4 && session.currentPage === check.tabIds[0] },
-        { name: "tabs along the top: the rail folds, the strip shows, the page starts under it", wait: 800,
+        { name: "right-click on the empty part of the side rail's tabs: one line, \"Show tabs along the top\"", wait: 400,
+          act: () => { check.tabsBefore = { page: session.currentPage, threads: session.threads.length, pages: Object.keys(session.pages).length };
+              const l = app.windowRail.listView, p = l.mapToItem(null, 120, l.height - 15); probe.pointer(p.x, p.y); probe.pointer(p.x, p.y, Qt.RightButton); probe.pointer(p.x, p.y) },
+          expect: () => { const m = app.windowRail.tabMenu; return m.opened && m.entries.map(e => e.text).join("|") === "Show tabs along the top" } },
+        { name: "(Esc) a tab's menu in the side rail ends with the same line", wait: 400,
+          act: () => app.windowRail.tabMenu.close(),
+          expect: () => { app.windowRail.showMenu("p:" + check.tabIds[0], false); const e = app.windowRail.tabMenu.entries; return e.length > 2 && e[e.length - 1].text === "Show tabs along the top" && e[e.length - 2].separator === true } },
+        { name: "picking it moves the tabs: moving at once, along the top once it ends;", wait: 150,
+          act: () => { const m = app.windowRail.tabMenu; m.pick(m.entries.length - 1) },
+          expect: () => app.tabsMoving && app.tabsTop },
+        { name: "(the motion ends and the strip and the address row are in place)", wait: 1300,
+          expect: () => !app.tabsMoving && app.tabsMove === 0 && app.tabsTop && app.windowTabs.visible && app.prefs.values.tabs === "top"
+              && session.currentPage === check.tabsBefore.page && session.threads.length === check.tabsBefore.threads && Object.keys(session.pages).length === check.tabsBefore.pages
+              && app.windowAddressRow.mapToItem(null, 0, 0).y === app.inset + app.tabsHeight && app.currentView.mapToItem(null, 0, 0).y === app.inset + app.tabsDrop },
+        { name: "right-click on the empty part of the top row: one line, \"Show tabs on the side\"", wait: 400,
+          act: () => { const p = app.windowTabs.mapToItem(null, app.windowTabs.width - 24, 10); probe.pointer(p.x, p.y); probe.pointer(p.x, p.y, Qt.RightButton); probe.pointer(p.x, p.y) },
+          expect: () => { const m = app.windowTabs.tabMenu; return m.opened && m.entries.map(e => e.text).join("|") === "Show tabs on the side" } },
+        { name: "(Esc) a tab's menu in the top row ends with the same line", wait: 400,
+          act: () => app.windowTabs.tabMenu.close(),
+          expect: () => { app.windowTabs.showMenu("p:" + check.tabIds[1], false); const e = app.windowTabs.tabMenu.entries; return e.length > 2 && e[e.length - 1].text === "Show tabs on the side" && e[e.length - 2].separator === true } },
+        { name: "picking it brings the tabs back to the side, the profile holds no choice again, everything stays", wait: 1500,
+          act: () => { const m = app.windowTabs.tabMenu; m.pick(m.entries.length - 1) },
+          expect: () => !app.tabsMoving && !app.tabsTop && app.railPinned && !app.windowTabs.visible && app.prefs.values.tabs === undefined
+              && session.currentPage === check.tabsBefore.page && session.threads.length === check.tabsBefore.threads && Object.keys(session.pages).length === check.tabsBefore.pages },
+        { name: "with reduced motion the tabs change place at once, with no motion", wait: 100,
+          act: () => { app.reducedMotion = true; app.placeTabs(true) },
+          expect: () => app.tabsTop && !app.tabsMoving && app.tabsMove === 0 && app.prefs.values.tabs === "top" },
+        { name: "(and back at once)", wait: 100,
+          act: () => { app.placeTabs(false); app.reducedMotion = false },
+          expect: () => !app.tabsTop && !app.tabsMoving && app.tabsMove === 0 && app.prefs.values.tabs === undefined },
+        { name: "tabs along the top: the rail folds, the strip and the address row show, the page starts under them", wait: 800,
           act: () => app.prefs.set("tabs", "top"),
-          expect: () => app.tabsTop && !app.railPinned && app.windowTabs.visible && app.currentView.mapToItem(null, 0, 0).y === app.inset + app.tabsHeight },
-        { name: "the strip lists the pages in the rail's order, a hairline where the task of three begins", wait: 100,
-          expect: () => check.tabItem(check.tabIds[2]) !== null && check.tabItem(check.tabIds[0]).edge && !check.tabItem(check.tabIds[1]).edge && !check.tabItem(check.tabIds[3]).edge },
+          expect: () => app.tabsTop && !app.railPinned && app.windowTabs.visible && app.windowAddressRow.visible
+              && app.windowAddressRow.mapToItem(null, 0, 0).y === app.inset + app.tabsHeight
+              && app.currentView.mapToItem(null, 0, 0).y === app.inset + app.tabsDrop },
+        { name: "the strip lists the pages in the rail's order, the task of three under its name, a hairline before it", wait: 100,
+          expect: () => { const t = session.pages[check.tabIds[0]].thread, h = check.tabItem(t);
+              return check.tabItem(check.tabIds[2]) !== null && !!h && h.header && h.title === session.threadById(t).title && h.open && h.edge
+                  && !check.tabItem(check.tabIds[0]).edge && !check.tabItem(check.tabIds[1]).edge && !check.tabItem(check.tabIds[3]).edge } },
+        { name: "a click on the task's name folds it: its pages leave the row; another opens it again", wait: 400,
+          act: () => { const t = session.pages[check.tabIds[0]].thread, p = check.tabAt(t, 0.3, 0.5); probe.pointer(p.x, p.y); probe.pointer(p.x, p.y, Qt.LeftButton); probe.pointer(p.x, p.y) },
+          expect: () => { const t = session.pages[check.tabIds[0]].thread; return !session.isOpen(session.threadById(t)) && check.tabItem(check.tabIds[1]) === null && check.tabItem(t).open === false } },
+        { name: "(and opens it)", wait: 400,
+          act: () => { const t = session.pages[check.tabIds[0]].thread, p = check.tabAt(t, 0.3, 0.5); probe.pointer(p.x, p.y); probe.pointer(p.x, p.y, Qt.LeftButton); probe.pointer(p.x, p.y) },
+          expect: () => { const t = session.pages[check.tabIds[0]].thread; return session.isOpen(session.threadById(t)) && check.tabItem(check.tabIds[1]) !== null } },
         { name: "a click on a tab shows its page", wait: 300,
           act: () => check.tabPress(check.tabIds[1]), expect: () => session.currentPage === check.tabIds[1] },
-        { name: "the pointer on the left edge below the strip still brings the rail out; over the strip it does not", wait: 300,
-          act: () => probe.pointer(8, 15), expect: () => { return !hoverPeek.open } },
-        { name: "(below the strip, the rail comes out)", wait: 300,
-          act: () => probe.pointer(8, 400), expect: () => hoverPeek.open },
-        { name: "(and goes)", wait: 700, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
+        { name: "the pointer on the left edge brings nothing out along the top, over the page or the row", wait: 600,
+          act: () => probe.pointer(8, 400), expect: () => !hoverPeek.open && !hoverPeek.out },
+        { name: "(nor does flicking out across the left side)", wait: 300,
+          act: () => probe.pointer(0, 400), expect: () => !hoverPeek.open && !hoverPeek.flung },
+        { name: "the row's button brings the rail out, and it stays while the pointer is elsewhere", wait: 1200,
+          act: () => check.clickNamed(app.windowAddressRow, "railButton"), expect: () => hoverPeek.open && hoverPeek.out && peekedRail.slide === 1 },
+        { name: "a press on the page puts it away", wait: 700,
+          act: () => { probe.pointer(700, 400); probe.pointer(700, 400, Qt.LeftButton); probe.pointer(700, 400) }, expect: () => !hoverPeek.open },
         { name: "Ctrl+B lifts the rail, as the pin key does docked", wait: 300,
           focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, expect: () => hoverPeek.open && !app.railPinned },
         { name: "(and Ctrl+B sends it away again)", wait: 600, key: Qt.Key_B, mods: ctrl, expect: () => !hoverPeek.open && !app.railPinned },

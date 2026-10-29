@@ -21,6 +21,8 @@ class Facts : public QObject {
     Q_PROPERTY(QString reachability READ reachability NOTIFY reachabilityChanged)
     // a backend reports reachability, so a page may say it loads again when the network is back
     Q_PROPERTY(bool watching READ watching CONSTANT)
+    // Tacit's switch for every motion (TACIT_REDUCED_MOTION=1, as the design kit reads it)
+    Q_PROPERTY(bool reducedMotion READ reducedMotion CONSTANT)
 public:
     explicit Facts(QObject *parent = nullptr);
 
@@ -29,6 +31,7 @@ public:
 
     QString reachability() const { return m_reachability; }
     bool watching() const { return m_watching; }
+    bool reducedMotion() const { return qEnvironmentVariable("TACIT_REDUCED_MOTION") == QLatin1String("1"); }
     Q_INVOKABLE void fakeReachability(const QString &reachability);
 
     // { names, subject, issuer, from, until (ms since the epoch), sha256 } of the leaf certificate; {} without one

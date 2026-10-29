@@ -2,8 +2,10 @@ import QtQuick
 import QtQuick.Controls as Controls
 import "RailRows.js" as RailRows
 
-// The tabs along the top (Settings > Tabs), the rail's pages in a row: the Always pages as faces, then every page of every
-// open task, a hairline where a task of several pages begins or ends, and + at the end. A tab is the rail's page row on its
+// The tabs along the top (Settings > Tabs), the rail's pages in a row: the Always pages as faces, then every open task, a
+// hairline where a task of several pages begins or ends, and + at the end. A task of several pages leads with its name,
+// the rail's task row on its side (name, how many pages when folded, the arrow); a click folds it or opens it, and its
+// pages follow while it is open. A tab is the rail's page row on its
 // side: favicon, title, sound and its one word, close under the pointer; right-click is the rail's page menu, a held tab
 // moves (within its task, into another, out as a task of its own, onto the faces to keep it). Keys as the rail list's after
 // F6: Left and Right, Home and End, Enter, Delete, Menu, Esc. The rail itself stays folded, with the address card.
@@ -26,6 +28,7 @@ Item {
     readonly property bool busy: menu.opened || drag !== null
     readonly property bool listFocused: list.activeFocus
     readonly property alias listView: list
+    readonly property alias tabMenu: menu               // for the checks
 
     ListModel { id: rowModel }
     readonly property var rows: {
@@ -34,8 +37,10 @@ Item {
     }
     onRowsChanged: sync()
     Component.onCompleted: sync()
+    property int synced: 0                  // counts the syncs, for what is measured from the rows
     function sync() {
         RailRows.sync(rowModel, rows);
+        synced++;
         for (let i = 0; i < rowModel.count && cursorKey !== ""; i++)
             if (rowModel.get(i).key === cursorKey && i !== cursor) {
                 cursor = i;
@@ -67,9 +72,31 @@ Item {
                 n++;
         return n;
     }
-    readonly property int tabs: rowModel.count - faces
-    readonly property real tabWidth: Math.max(100, Math.min(220, tabs > 0 ? Math.floor((width - plus.width - 8 - faces * faceWidth) / tabs) : 220))
+    // a task's name takes what it needs, up to 168 px: the name, the count of its pages when folded and the arrow
+    FontMetrics { id: nameMetrics; font.family: Theme.font.main; font.pixelSize: Theme.font.body; font.weight: Font.Medium }
+    function headerWidth(r) {
+        return Math.min(168, 10 + Math.ceil(nameMetrics.advanceWidth(r.title)) + 6 + (r.open ? 0 : 20) + 22);
+    }
+    readonly property var headers: {
+        synced;
+        let n = 0, w = 0;
+        for (let i = 0; i < rowModel.count; i++)
+            if (rowModel.get(i).type === "thread") {
+                n++;
+                w += headerWidth(rowModel.get(i)) + (rowModel.get(i).edge ? 9 : 0);
+            }
+        return { count: n, width: w };
+    }
+    readonly property int tabs: rowModel.count - faces - headers.count
+    readonly property real tabWidth: Math.max(100, Math.min(220, tabs > 0 ? Math.floor((width - plus.width - 8 - faces * faceWidth - headers.width) / tabs) : 220))
 
+    // the empty part of the row: right-click moves the tabs to the side
+    MouseArea {
+        id: emptyRow
+        anchors.fill: parent
+        acceptedButtons: Qt.RightButton
+        onClicked: mouse => strip.openMenu("tabs", "", "", emptyRow, mouse.x, mouse.y)
+    }
     ListView {
         id: list
         orientation: ListView.Horizontal
@@ -105,6 +132,7 @@ Item {
             required property string letter
             required property bool edge
             required property int count
+            required property bool open
             required property bool current
             required property bool dim
             required property bool audible
@@ -117,11 +145,12 @@ Item {
             required property int index
 
             readonly property bool face: type === "pin"
+            readonly property bool header: type === "thread"
             readonly property bool hovered: area.containsMouse || closeArea.containsMouse || audioArea.containsMouse || strip.hoverKey === key
             readonly property real fade: dim ? 0.5 : 1
             readonly property alias washColor: wash.color      // for the checks
             objectName: "tab:" + ref
-            width: (face ? strip.faceWidth : strip.tabWidth) + (edge ? 9 : 0)
+            width: (face ? strip.faceWidth : header ? strip.headerWidth(tab) : strip.tabWidth) + (edge ? 9 : 0)
             height: strip.tabHeight
 
             // where a task of several pages begins or ends
@@ -171,7 +200,7 @@ Item {
                     width: tab.face ? 20 : 16; height: width
                     sourceSize: Qt.size(40, 40)
                     source: (Engine.iconRevision, Engine.keptIcon(String(tab.icon)))
-                    visible: status === Image.Ready && !(tab.loading && !tab.face) && tab.failed === ""
+                    visible: status === Image.Ready && !(tab.loading && !tab.face) && tab.failed === "" && !tab.header
                     opacity: tab.fade
                 }
                 // no favicon: a face shows the site's first letter on a tile, a tab the page's glyph
@@ -187,14 +216,14 @@ Item {
                     x: 10
                     anchors.verticalCenter: parent.verticalCenter
                     width: 16
-                    visible: !tab.face && !favicon.visible && !tab.loading
+                    visible: !tab.face && !tab.header && !favicon.visible && !tab.loading
                     text: tab.failed !== "" ? "warning" : tab.glyph || "language"
                     fill: RailRows.filled(text)
                     iconSize: 16
                     color: tab.failed === "certificate" ? Theme.error : Theme.colSubtext
                     opacity: tab.fade
                 }
-                Busy { x: 10; width: 16; height: 16; iconSize: 14; anchors.verticalCenter: parent.verticalCenter; visible: !tab.face && tab.loading }
+                Busy { x: 10; width: 16; height: 16; iconSize: 14; anchors.verticalCenter: parent.verticalCenter; visible: !tab.face && !tab.header && tab.loading }
                 // a face's unread count on its top right corner, on a disc of the ground
                 Rectangle {
                     visible: tab.face && tab.count > 0
@@ -214,7 +243,7 @@ Item {
                 }
 
                 Label {
-                    visible: !tab.face
+                    visible: !tab.face && !tab.header
                     anchors { left: parent.left; leftMargin: 34; right: marks.left; rightMargin: 4; verticalCenter: parent.verticalCenter }
                     text: tab.title
                     font.pixelSize: Theme.font.body
@@ -222,10 +251,50 @@ Item {
                     color: Theme.colOnLayer0
                     opacity: Theme.dimTextReadable ? tab.fade : 1
                 }
+                // A task's name, then (folded) how many pages it holds or its one word's glyph, and the arrow that turns as it
+                // opens, as the rail's task row
+                Label {
+                    visible: tab.header
+                    anchors { left: parent.left; leftMargin: 10; right: headerMarks.left; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                    text: tab.title
+                    font.pixelSize: Theme.font.body
+                    weight: Font.Medium
+                    color: Theme.inkMain
+                }
+                Row {
+                    id: headerMarks
+                    visible: tab.header
+                    anchors { right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
+                    spacing: 2
+                    Symbol {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: tab.wordGlyph !== "" && tab.word !== ""
+                        width: 18
+                        text: tab.wordGlyph
+                        iconSize: 17
+                        color: Theme.inkMain
+                    }
+                    Count {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: !tab.open && !(tab.wordGlyph !== "" && tab.word !== "")
+                        height: 20
+                        text: String(tab.count)
+                        color: Theme.inkMeta
+                    }
+                    Symbol {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 20
+                        text: "chevron_right"
+                        rotation: tab.open ? 90 : 0
+                        Behavior on rotation { Anim { type: Anim.StandardSmall } }
+                        iconSize: 16
+                        color: Theme.colSubtext
+                    }
+                }
                 // its one word's glyph, the sound (a click mutes), then close under the pointer or on the current tab
                 Row {
                     id: marks
-                    visible: !tab.face
+                    visible: !tab.face && !tab.header
                     anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter }
                     spacing: 2
                     Symbol {
@@ -271,7 +340,7 @@ Item {
                 property bool dragged: false
                 onPressed: mouse => { pressX = mouse.x; dragged = false }
                 onPositionChanged: mouse => {
-                    if (!pressed || tab.type === "away" || !(pressedButtons & Qt.LeftButton))
+                    if (!pressed || tab.type === "away" || tab.header || !(pressedButtons & Qt.LeftButton))
                         return;
                     const x = mapToItem(strip, mouse.x, 0).x;
                     if (!dragged && Math.abs(mouse.x - pressX) > 8) {
@@ -287,9 +356,11 @@ Item {
                     if (dragged)
                         return;
                     if (mouse.button === Qt.RightButton)
-                        strip.openMenu(tab.face ? "always" : "page", tab.ref, tab.key, tab, mouse.x, mouse.y);
+                        strip.openMenu(tab.face ? "always" : tab.header ? "thread" : "page", tab.ref, tab.key, tab, mouse.x, mouse.y);
                     else if (mouse.button === Qt.MiddleButton && tab.type === "page")
                         strip.closePage(tab.ref);
+                    else if (mouse.button === Qt.LeftButton && tab.header)
+                        strip.toggleTask(tab.ref, tab.open);
                     else if (mouse.button === Qt.LeftButton)
                         strip.activate(tab.ref);
                 }
@@ -323,11 +394,20 @@ Item {
         }
     }
 
-    // Row menus: the rail's page menu and Always menu, carried out by the same commands
+    // a folded task comes back at its last-seen page, which opens it where it is (Session.activate); an open one folds
+    function toggleTask(ref, open) {
+        if (open)
+            session.setOpen(ref, false);
+        else
+            strip.activate(session.mostRecentPage(ref));
+    }
+
+    // Row menus: the rail's page menu, task menu and Always menu, carried out by the same commands. A task's name is
+    // renamed in the rail.
     property string menuKey: ""
     property var menuTarget: null
     function openMenu(type, ref, key, item, x, y) {
-        const entries = RailRows.menu(session, type, ref, strip.offTheRecord);
+        const entries = RailRows.menu(session, type, ref, strip.offTheRecord, true).filter(e => e.action !== "rename");
         if (entries.length === 0)
             return;
         hideTip(item);
@@ -343,7 +423,13 @@ Item {
         id: menu
         sub: menuSub
         onClosed: strip.menuKey = ""
-        onPicked: (action, arg) => strip.command(action, strip.menuTarget.ref, arg)
+        onPicked: (action, arg) => {
+            const t = strip.menuTarget;
+            if (action === "fold")
+                strip.toggleTask(t.ref, session.isOpen(session.threadById(t.ref)));
+            else
+                strip.command(action, t.ref, arg);
+        }
     }
     RowMenu { id: menuSub; owner: menu }
     // The menu of the tab with `key`, as for the Menu key and the shots; `sub` also opens its submenu.
@@ -354,12 +440,15 @@ Item {
                 const r = rowModel.get(i), item = list.itemAtIndex(i);
                 if (!item)
                     return;
-                openMenu(r.type === "pin" ? "always" : "page", r.ref, key, item, Math.min(60, item.width / 2), item.height);
+                openMenu(r.type === "pin" ? "always" : r.type === "thread" ? "thread" : "page", r.ref, key, item, Math.min(60, item.width / 2), item.height);
                 if (sub)
                     menu.openSub(menu.entries.findIndex(e => e.sub));
                 return;
             }
     }
+
+    // the menu of the empty part of the row, for the shots and the checks
+    function showTabsMenu() { openMenu("tabs", "", "", emptyRow, emptyRow.width - 120, 20); }
 
     // Tab tooltip after 600 ms: the full title, the host and whether the page is live, frozen or unloaded
     function showTip(item, pageId) {
@@ -441,10 +530,15 @@ Item {
         for (let j = faces; j < rowModel.count; j++) {
             const r = rowModel.get(j);
             if (r.type === "page")
-                rows.push({ ref: r.ref, thread: r.thread, index: j });
+                rows.push({ ref: r.ref, thread: r.thread, index: j, afterName: j > 0 && rowModel.get(j - 1).type === "thread" });
         }
         if (rows.length === 0 || !mine)
             return null;
+        // on a task's name: the page joins that task
+        if (i >= 0 && rowModel.get(i).type === "thread") {
+            const t = rowModel.get(i).ref;
+            return mine.thread === t ? null : { arg: { kind: "onto", thread: t }, line: -1, onto: t, faces: false };
+        }
         const lineAt = j => {
             const it = list.itemAtIndex(j);
             return it ? it.x - list.contentX + list.x + (it.edge ? 4 : 0) : -1;
@@ -463,7 +557,8 @@ Item {
             const prev = k > 0 ? rows[k - 1] : k < 0 ? rows[rows.length - 1] : null;
             if (b && b.ref === ref || prev && prev.ref === ref)
                 return null;
-            const own = prev && b && prev.thread === b.thread;
+            // before a task's first page, under its name, is inside the task
+            const own = prev && b && prev.thread === b.thread || b && b.afterName;
             if (own)
                 return { arg: { kind: "into", thread: b.thread, before: b.ref }, line: line, onto: "", faces: false };
             // between tasks (or at an end): a task of its own there
@@ -533,10 +628,12 @@ Item {
         else if (event.key === Qt.Key_End) moveCursor(rowModel.count);
         else if (event.key === Qt.Key_Escape) strip.leaveList();
         else if (!r) return false;
+        else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) && r.type === "thread") toggleTask(r.ref, r.open);
         else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) strip.activate(r.ref);
+        else if (event.key === Qt.Key_Delete && r.type === "thread") strip.command("file", r.ref, null);
         else if (event.key === Qt.Key_Delete && r.type === "page") closeFromList(r.ref);
         else if ((event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) && item)
-            openMenu(r.type === "pin" ? "always" : "page", r.ref, r.key, item, 20, item.height);
+            openMenu(r.type === "pin" ? "always" : r.type === "thread" ? "thread" : "page", r.ref, r.key, item, 20, item.height);
         else return false;
         return true;
     }

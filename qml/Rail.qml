@@ -61,6 +61,7 @@ Item {
     property var notice: null               // Main's notice, for the address card's second line
     signal noticeActed()
     readonly property alias listView: list
+    readonly property alias tabMenu: rowMenu            // for the checks
     // a menu, rename, edit or drag in progress: the hover overlay stays out while it lasts
     readonly property bool busy: rowMenu.opened || pageStack.opened || renaming !== "" || earlier.editing !== "" || drag !== null || incoming !== null
 
@@ -170,7 +171,7 @@ Item {
     property string menuKey: ""
     property var menuTarget: null
     function openMenu(type, ref, key, item, x, y) {
-        const entries = RailRows.menu(session, type, ref, rail.offTheRecord);
+        const entries = RailRows.menu(session, type, ref, rail.offTheRecord, rail.tabsTop);
         if (entries.length === 0)
             return;
         hideTip(item);
@@ -268,6 +269,9 @@ Item {
         if (sub)
             rowMenu.openSub(rowMenu.entries.findIndex(e => e.sub));
     }
+
+    // the menu of the empty part of the tabs, for the shots and the checks
+    function showTabsMenu() { openMenu("tabs", "", "", emptyTabs, 60, Math.max(8, emptyTabs.height - 70)); }
 
     function rowOpen(key) {
         for (let i = 0; i < rowModel.count; i++)
@@ -842,6 +846,7 @@ Item {
             }
             IconButton {
                 objectName: "backButton"
+                visible: !rail.tabsTop
                 readonly property var view: address.view
                 glyph: "arrow_back"
                 // a page a link opened goes back to its opener (Main.back)
@@ -851,6 +856,7 @@ Item {
             }
             IconButton {
                 objectName: "forwardButton"
+                visible: !rail.tabsTop
                 readonly property var view: address.view
                 glyph: "arrow_forward"
                 enabledState: view ? view.canGoForward : false
@@ -897,7 +903,8 @@ Item {
     Item {
         id: addressSlot
         anchors { top: rail.offTheRecord ? privateNote.bottom : navRow.bottom; topMargin: 8; left: parent.left; right: parent.right; leftMargin: 10; rightMargin: 10 }
-        height: address.height
+        // along the top the address is in the row under the tabs (AddressRow); this slot is only where find and the site panel open
+        height: rail.tabsTop ? 0 : address.height
     }
 
     // + New page, 4 px under the address card, its key at the right in the meta ink
@@ -1282,6 +1289,14 @@ Item {
         color: Theme.colSubtext
     }
 
+    // the empty part of the tabs: right-click moves them along the top
+    MouseArea {
+        id: emptyTabs
+        anchors.fill: list
+        enabled: !rail.inEarlier
+        acceptedButtons: Qt.RightButton
+        onClicked: mouse => rail.openMenu("tabs", "", "", emptyTabs, mouse.x, mouse.y)
+    }
     ListView {
         id: list
         anchors { top: rail.inEarlier ? earlierHead.bottom : newRow.bottom; topMargin: 2; left: parent.left; right: parent.right; bottom: alwaysRow.visible ? alwaysRow.top : foot.top; bottomMargin: 4 }
@@ -2128,6 +2143,7 @@ Item {
 
     AddressField {
         id: address
+        visible: !rail.tabsTop
         x: addressSlot.x
         y: addressSlot.y
         width: addressSlot.width

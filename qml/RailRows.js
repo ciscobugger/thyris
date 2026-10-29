@@ -257,9 +257,10 @@ function pageRowOf(p, depth, current, now) {
     };
 }
 
-// The tabs along the top (Settings > Tabs): the Always pages as faces, then every page of every open task in the rail's
-// order, whatever a task's fold; `edge` marks the first page of a task that sits beside one of several pages, where the
-// strip draws a hairline. Rows carry the rail's roles, so the same sync keeps them.
+// The tabs along the top (Settings > Tabs): the Always pages as faces, then every open task in the rail's order. A task of
+// several pages leads with its name (the rail's task row: icon, name, how many pages when folded) and then its pages, none
+// while it is folded by hand; a task of one is its page. `edge` marks what begins a task that sits beside one of several
+// pages, where the strip draws a hairline. Rows carry the rail's roles, so the same sync keeps them.
 function strip(session, options) {
     const opts = options || {};
     const now = opts.now || Date.now();
@@ -281,16 +282,26 @@ function strip(session, options) {
         if (away && session.pages[away])
             out.push(Object.assign(pageRowOf(session.pages[away], 0, current, now), { key: "away:" + away, type: "away" }));
     }
-    let before = 0;
+    let had = false, afterSeveral = false;
     for (const t of session.drawnThreads()) {
         const pages = t.pages.map(id => session.pages[id]).filter(p => p);
-        pages.forEach((p, i) => {
-            const r = pageRowOf(p, 0, current, now);
-            r.thread = t.id;
-            r.edge = i === 0 && before > 0 && (before > 1 || pages.length > 1);
-            out.push(r);
-        });
-        before = pages.length;
+        const several = pages.length > 1;
+        const open = session.isOpen(t);
+        if (several) {
+            const w = open ? { word: "", accent: false } : threadWord(pages, []);
+            out.push({ key: "t:" + t.id, type: "thread", ref: t.id, title: taskName(t, pages), icon: leadIcon(pages), count: pages.length,
+                       open: open, current: !open && pages.some(p => p.id === current), needsYou: pages.some(p => p.needsYou),
+                       word: w.word, accent: w.accent, wordGlyph: w.glyph || "", edge: had });
+        }
+        if (!several || open)
+            pages.forEach(p => {
+                const r = pageRowOf(p, several ? 1 : 0, current, now);
+                r.thread = t.id;
+                r.edge = !several && afterSeveral;
+                out.push(r);
+            });
+        had = true;
+        afterSeveral = several;
     }
     return out;
 }
@@ -514,8 +525,14 @@ function sync(model, rows) {
 // { text, shortcut, action, arg }, { separator: true } or { text, sub: [entries] }. Hand to Claude, Open in new
 // window and Delete thread wait for their phases. A private window (`offTheRecord`) has no Always and saves nothing.
 // Earlier's rows (PLAN.md 3.7): a filed thread and each of its pages, a closed page, a Saved page and thread.
-function menu(session, type, ref, offTheRecord) {
+// `tabsTop` (true along the top, false along the side; left out where the tabs are not shown) adds the one line that
+// moves the tabs to the other place, last in a tab's menu, and alone in the menu of the empty part of the tabs ("tabs").
+function menu(session, type, ref, offTheRecord, tabsTop) {
     const sep = { separator: true };
+    const place = { text: tabsTop ? "Show tabs on the side" : "Show tabs along the top", action: "tabsPlace" };
+    const withPlace = out => tabsTop === undefined ? out : out.concat([sep, place]);
+    if (type === "tabs")
+        return tabsTop === undefined ? [] : [place];
     function label(t) {
         return t.pages.length === 1 ? (session.pages[t.pages[0]].title || named(session.pages[t.pages[0]].url)) : t.title;
     }
@@ -548,19 +565,19 @@ function menu(session, type, ref, offTheRecord) {
         out.push({ text: "Close page", shortcut: "Ctrl+W", action: "close" });
         if (several)
             out.push({ text: "Close other pages here", action: "closeOthers" });
-        return out;
+        return withPlace(out);
     }
     if (type === "thread") {
         const t = session.threadById(ref);
         const open = session.isOpen(t);
-        return [
+        return withPlace([
             { text: "Rename", shortcut: "F2", action: "rename" },
             { text: "New page here", action: "newHere" },
         ].concat(offTheRecord ? [] : [{ text: "Save task", action: "saveThread" }]).concat([
             { text: open ? "Fold" : "Open", action: "fold" },
             sep,
             { text: "Close task", shortcut: "Ctrl+Shift+W", action: "file" },
-        ]);
+        ]));
     }
     if (type === "always") {
         const p = session.pages[ref];
@@ -574,7 +591,7 @@ function menu(session, type, ref, offTheRecord) {
         if (at < session.always.length - 1)
             out.push({ text: "Move right", action: "moveRight" });
         out.push(sep, { text: "Unpin", action: "removeAlways" });
-        return out;
+        return withPlace(out);
     }
     const here = !!session.current && !!session.current.thread;
     const forget = { text: "Forget", shortcut: "Shift+Delete", action: "forget" };

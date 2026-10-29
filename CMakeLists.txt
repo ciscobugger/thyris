@@ -55,7 +55,7 @@ if(BROWSER_DEV OR BROWSER_CEF)
 endif()
 qt_add_qml_module(browser URI Browser ${qml_compile}
     SOURCES src/theme.cpp src/theme.h src/store.cpp src/store.h src/backdrop.cpp src/backdrop.h src/apps.cpp src/apps.h src/picker.cpp src/picker.h src/facts.cpp src/facts.h src/disk.cpp src/disk.h src/sitedata.cpp src/sitedata.h src/windows.cpp src/windows.h src/engine.cpp src/engine.h src/passwords.cpp src/passwords.h src/printing.cpp src/printing.h src/readability.cpp src/readability.h src/zen.cpp src/zen.h src/passwordfile.cpp src/passwordfile.h src/chromeimport.cpp src/chromeimport.h src/extensions.cpp src/extensions.h src/crx.cpp src/crx.h src/storerules.cpp src/storerules.h src/storefetch.cpp src/storefetch.h src/webstore.cpp src/webstore.h
-    QML_FILES qml/Main.qml qml/BrowserView.qml qml/Session.qml qml/History.qml qml/Rail.qml qml/TabStrip.qml qml/Omnibox.qml qml/AddressField.qml qml/AddressEditor.qml qml/CommandBar.qml qml/SuggestionRow.qml qml/KeyCap.qml qml/IconButton.qml
+    QML_FILES qml/Main.qml qml/BrowserView.qml qml/Session.qml qml/History.qml qml/Rail.qml qml/TabStrip.qml qml/AddressRow.qml qml/Omnibox.qml qml/AddressField.qml qml/AddressEditor.qml qml/CommandBar.qml qml/SuggestionRow.qml qml/KeyCap.qml qml/IconButton.qml
               qml/RailRows.js qml/PageMenu.js qml/PageState.js qml/LoadLine.qml qml/Busy.qml qml/Count.qml qml/RowMenu.qml qml/KeyMap.js qml/Lifecycle.js
               qml/Asks.js qml/AskSection.qml qml/AskSheet.qml qml/Sites.qml qml/TextButton.qml qml/Slab.qml qml/PageDialog.qml qml/PopupCard.qml
               qml/Logins.js qml/DevTools.js qml/Swipe.js

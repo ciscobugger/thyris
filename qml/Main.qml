@@ -82,12 +82,86 @@ Window {
     property var profile: null
     property var views: ({})            // pageId -> BrowserView, created the first time a page is shown
     property bool railPinned: true
-    // Settings > Tabs: along the top, the rail stays folded (its address card, find and the rest come out of the left edge)
-    // and the page lists its tabs in a row (TabStrip)
+    // Settings > Tabs: along the top, the rail stays folded (History, Saved, Downloads, find and the rest come out of the left
+    // edge on the address row's button or Ctrl+B, never under the pointer), the page lists its tabs in a row (TabStrip) and
+    // its address sits under them (AddressRow)
     readonly property bool tabsTop: prefs.get("tabs") === "top"
     readonly property int tabsHeight: 36
-    readonly property real tabsDrop: tabsTop && !pageFullScreen ? tabsHeight : 0
+    // under the tabs, the address row (AddressRow): its 40 px and the 6 px of air before the page
+    readonly property int addressRowHeight: 46
+    readonly property real tabsDrop: tabsTop && !pageFullScreen ? tabsHeight + addressRowHeight : 0
     onTabsTopChanged: setFold(!tabsTop)
+
+    // Moving the tabs from the side to the top and back (right-click on the tabs; Settings > Tabs changes them at once).
+    // The layout changes once, to the new one, under a still of what leaves; then one motion on the rail's curve
+    // (DefaultSpatial) brings the new tabs in from the left edge as the old ones go out toward it, and the page slides
+    // from its old place to its new one. The page keeps its final size the whole time: it moves, it is never resized.
+    property bool reducedMotion: Facts.reducedMotion    // Tacit's switch for every motion (the kit's TACIT_REDUCED_MOTION)
+    property real tabsMove: 0           // 1 as the tabs start to move, 0 once they have arrived
+    property bool tabsToTop: true       // which way they move
+    readonly property bool tabsMoving: tabsMoveAnim.running || tabsStillRail.then !== null
+    readonly property real tabsFilmX: tabsMove * railWidth
+    readonly property real filmPageX: tabsMove * (tabsToTop ? 1 : -1) * (railWidth - inset)
+    readonly property real filmPageY: tabsMove * (tabsToTop ? -1 : 1) * (tabsHeight + addressRowHeight)
+    // `holdAt` (shots) stops the motion at that point of it
+    function placeTabs(top, holdAt) {
+        if (top === tabsTop)
+            return;
+        if (holdAt === undefined && (reducedMotion || shotMode || !visible || pageFullScreen)) {
+            prefs.set("tabs", top ? "top" : "side");
+            return;
+        }
+        tabsMoveAnim.stop();
+        tabsMove = 0;
+        tabsToTop = top;
+        const leaving = top ? [pinnedRail] : [tabStrip, addressRow];
+        tabsStillRail.then = () => {
+            prefs.set("tabs", top ? "top" : "side");
+            tabsMove = 1;
+            if (holdAt !== undefined)
+                tabsMove = holdAt;
+            else
+                tabsMoveAnim.restart();
+        };
+        tabsStillRail.take(leaving[0]);
+        if (leaving.length > 1)
+            tabsStillRow.take(leaving[1]);
+    }
+    Anim { id: tabsMoveAnim; target: root; property: "tabsMove"; to: 0; type: Anim.DefaultSpatial; onStopped: { tabsStillRail.drop(); tabsStillRow.drop() } }
+    component TabsStill: ShaderEffectSource {
+        id: still
+        z: 30
+        visible: false
+        live: false
+        property var then: null
+        opacity: Math.max(0, Math.min(1, root.tabsMove))
+        transform: Translate { x: -(1 - root.tabsMove) * root.railWidth }
+        function take(item) {
+            if (sourceItem === item && visible)     // already taken (the shots draw their frame first)
+                return;
+            x = item.x; y = item.y; width = item.width; height = item.height;
+            sourceItem = item;
+            visible = true;
+            scheduleUpdate();
+        }
+        function drop() {
+            then = null;
+            visible = false;
+            sourceItem = null;
+        }
+        onScheduledUpdateCompleted: arrive()
+        function arrive() {
+            limit.stop();
+            const go = then;
+            then = null;
+            if (go)
+                go();
+        }
+        // a frame that does not come (a window nobody sees) does not hold the switch back
+        Timer { id: limit; interval: 150; running: still.then !== null; onTriggered: still.arrive() }
+    }
+    TabsStill { id: tabsStillRail }
+    TabsStill { id: tabsStillRow }
     property int railWidth: 300         // drag 248-420, double-click resets
     property string hoveredLink: ""
     readonly property bool noPage: sessionModel.currentPage === ""
@@ -110,6 +184,9 @@ Window {
     readonly property alias windowHover: peek
     readonly property alias windowOverlay: peekRail
     readonly property alias windowTabs: tabStrip
+    readonly property alias windowTabsOut: tabsStillRail    // what leaves when the tabs change place, for the shots
+    readonly property alias windowTabsOutRow: tabsStillRow
+    readonly property alias windowAddressRow: addressRow
     readonly property alias windowSite: siteInfo
     readonly property alias windowAddress: addressEditor
     readonly property alias windowNotch: notchAddress
@@ -508,7 +585,7 @@ Window {
         y: root.pageFullScreen ? 0 : root.inset + root.tabsDrop
         width: parent.width - x - (root.pageFullScreen ? 0 : root.inset) - (root.devToolsShown && root.devToolsSide === "right" ? root.devToolsWidthShown + root.inset : 0)
         height: parent.height - y - (root.pageFullScreen ? 0 : root.inset) - (root.devToolsShown && root.devToolsSide === "bottom" ? root.devToolsHeight + root.inset : 0)
-        transform: Translate { x: root.pageShift }
+        transform: Translate { x: root.pageShift + root.filmPageX; y: root.filmPageY }
         // P keys: a web view hands the keys its page left unhandled to this, its parent
         Keys.onPressed: event => root.pageKey(event)
 
@@ -544,7 +621,7 @@ Window {
             // the "Save password?" offer stays the card's quiet line: the page does not wait on it; in page full screen
             // the ask waits behind the notice ("is asking · Esc to answer")
             ask: addressEditor.editing || root.pageFullScreen || !root.shownAsk || root.shownAsk.kind === "password" ? null : root.shownAsk
-            y: (root.railPinned ? pinnedRail.y + pinnedRail.addressCardY : peekRail.y + peekRail.addressCardY) - pageArea.y
+            y: root.tabsTop ? 6 : (root.railPinned ? pinnedRail.y + pinnedRail.addressCardY : peekRail.y + peekRail.addressCardY) - pageArea.y
             onSiteSettings: type => root.openSite(type)
         }
         // the browser's own pages (PLAN.md 3.15, 3.17), drawn over their empty documents; Settings are the main profile's
@@ -714,12 +791,12 @@ Window {
     // While the page slides at its folded width its right side lies past the window: the window's ground and the
     // card's two right corners stay where the folded page's right edge is.
     Item {
-        visible: root.pageShift !== 0 && !root.pageFullScreen
+        visible: (root.pageShift !== 0 || root.tabsMove !== 0) && !root.pageFullScreen
         x: parent.width - root.inset - Theme.rounding.small
         width: root.inset + Theme.rounding.small
         height: parent.height
         Rectangle { x: Theme.rounding.small; width: root.inset; height: parent.height; color: Theme.terminal }
-        Cap { y: pageArea.y; rotation: 90 }
+        Cap { y: pageArea.y + root.filmPageY; rotation: 90 }
         Cap { y: parent.height - root.inset - height; rotation: 180 }
     }
 
@@ -807,6 +884,9 @@ Window {
         y: root.inset
         width: root.railWidth - 2 * root.inset
         height: parent.height - 2 * root.inset
+        // arriving from the left edge when the tabs change place (placeTabs)
+        opacity: 1 - Math.max(0, Math.min(1, root.tabsMove))
+        transform: Translate { x: -root.tabsFilmX }
         session: sessionModel
         omni: omniModel
         view: root.currentView
@@ -863,6 +943,9 @@ Window {
         y: root.inset
         width: parent.width - 2 * root.inset
         height: tabHeight
+        // arriving from the left edge when the tabs change place (placeTabs)
+        opacity: 1 - Math.max(0, Math.min(1, root.tabsMove))
+        transform: Translate { x: -root.tabsFilmX }
         session: sessionModel
         offTheRecord: root.offTheRecord
         onActivate: id => root.show(id)
@@ -871,6 +954,31 @@ Window {
         onToggleMute: id => root.toggleMute(id)
         onCommand: (name, ref, arg) => root.command(name, ref, arg)
         onLeaveList: root.focusPage()
+        Keys.onPressed: event => root.pageKey(event)
+    }
+    // The address under the tabs along the top: back, forward, the rail's address card, and the button for the rail
+    AddressRow {
+        id: addressRow
+        visible: root.tabsTop && !root.pageFullScreen
+        x: root.inset
+        y: root.inset + root.tabsHeight
+        width: parent.width - 2 * root.inset
+        // arriving from the left edge when the tabs change place (placeTabs)
+        opacity: 1 - Math.max(0, Math.min(1, root.tabsMove))
+        transform: Translate { x: -root.tabsFilmX }
+        session: sessionModel
+        omni: omniModel
+        view: root.currentView
+        lifted: addressEditor.out
+        railOut: peek.out
+        notice: root.cardNotice
+        onNoticeActed: root.runNotice()
+        onBack: root.command("back", root.currentView.pageId, null)
+        onClicked: root.addressKey()
+        onSiteClicked: r => root.openSite(r)
+        onFillPicked: entry => root.fillLogin(entry)
+        onFillLeft: root.focusPage()
+        onRailClicked: root.foldKey()
         Keys.onPressed: event => root.pageKey(event)
     }
 
@@ -893,7 +1001,7 @@ Window {
         // sheet over the page); not under an edit grown from the handle, where that line waits on the card's last line
         readonly property bool held: !root.railPinned && !root.pageFullScreen
             && (findModel.open && findModel.where === "peek" || siteInfo.open && siteInfo.where === "peek" || earlierState.view !== ""
-                || root.shownAsk !== null && root.shownAsk.kind === "password" && root.railSlide === 1
+                || !root.tabsTop && root.shownAsk !== null && root.shownAsk.kind === "password" && root.railSlide === 1
                    && !(addressEditor.editing && !addressEditor.from.rest))
         readonly property bool out: open || held
         onHoveredChanged: {
@@ -994,7 +1102,7 @@ Window {
     HoverHandler {
         id: windowPointer
         // offscreen the window gets one hover at (8, 8), in the zone, which opened the peek in the folded shots
-        enabled: !root.railPinned && !root.shotMode && !root.pageFullScreen
+        enabled: !root.railPinned && !root.tabsTop && !root.shotMode && !root.pageFullScreen
         onPointChanged: {
             if (peek.kept && (point.scenePosition.x !== peek.keptAt.x || point.scenePosition.y !== peek.keptAt.y))
                 peek.kept = false;
@@ -1087,7 +1195,7 @@ Window {
         id: pointer
         anchors.fill: parent
         z: 100
-        enabled: !root.railPinned && !root.pageFullScreen
+        enabled: !root.railPinned && !root.tabsTop && !root.pageFullScreen
         // the hover zone: the page's first 24 px (16 was easy to miss, owner 2026-10-25)
         readonly property int zone: 24
         readonly property bool inZone: windowPointer.hovered && windowPointer.point.position.x < zone
@@ -1163,6 +1271,10 @@ Window {
     function newPage(text) { newBar.show(text) }
     // an opening peek rail counts at the place it slides to; a closing one no longer counts
     function addressOrigin() {
+        if (root.tabsTop && addressRow.visible) {
+            const a = addressRow.addressRect(addressEditor);
+            return { x: a.x, y: a.y, width: a.width, height: a.height, radius: Theme.rounding.small, rest: true, ground: Theme.terminal };
+        }
         const rail = root.railPinned ? pinnedRail : peek.out ? peekRail : null;
         const r = rail ? rail.addressRect(addressEditor) : handle.mapToItem(addressEditor, 0, 0, handle.width, handle.height);
         const shift = rail === peekRail ? peekRail.restX - peekRail.x : 0;
@@ -2792,12 +2904,17 @@ Window {
         anchors.fill: parent
         z: 100
         enabled: siteInfo.open || findModel.open && findModel.where === "peek" || earlierState.view !== "" && !root.railPinned
+                 || root.tabsTop && peek.open
         PointHandler {
             acceptedButtons: Qt.AllButtons
             onActiveChanged: {
                 if (!active)
                     return;
                 const p = point.scenePressPosition;
+                // along the top the rail comes out on its button and goes on a press elsewhere (not on its button, whose
+                // press is the toggle, nor on a menu from it)
+                if (root.tabsTop && peek.open && !root.within(peekRail, p) && !root.within(addressRow.railButton, p) && !peekRail.busy)
+                    peek.open = false;
                 if (siteInfo.open && !root.within(siteInfo.where === "rail" ? pinnedRail.sitePanel : peekRail.sitePanel, p))
                     siteInfo.hide();
                 if (findModel.open && findModel.where === "peek" && !root.within(peekRail, p))
@@ -3515,8 +3632,8 @@ Window {
         }
     }
 
-    // Ctrl+B: pins and folds the rail; with the tabs along the top there is nothing to pin, so it lifts the rail and
-    // tucks it away again, or sends it away if it is out
+    // Ctrl+B: pins and folds the rail; with the tabs along the top there is nothing to pin, so it brings the rail out
+    // over the page, or sends it away if it is out. That and the row's button are the only ways it comes out there.
     function foldKey() {
         if (!tabsTop) {
             railPinned = !railPinned;
@@ -3528,21 +3645,24 @@ Window {
             return;
         }
         peek.open = true;
-        closeTimer.restart();
     }
     // F6: page, the ask's sheet (a waiting ask first), rail list (the tabs along the top), page
     function focusCycle() {
         const rail = railPinned ? pinnedRail : peekRail;
         const tabs = tabsTop ? tabStrip : rail;
+        // the card with the page's asks, Fill rows and "Add to Thyris": the rail's, or along the top the address row's;
+        // folded under the side rail the overlay comes out first, along the top there is nothing to bring out
+        const home = tabsTop ? addressRow : rail;
+        const lift = !railPinned && !tabsTop;
         if (addressEditor.editing) {
             // the peek opens first, so the card goes back into its slot rather than the handle
-            if (!railPinned)
+            if (lift)
                 peek.open = true;
             addressEditor.cancel();
             tabs.focusList();
         } else if (findModel.open || siteInfo.open) {
             // find or the site panel is in the address card's place
-            if (!railPinned)
+            if (lift)
                 peek.open = true;
             findModel.hide();
             siteInfo.hide();
@@ -3550,31 +3670,31 @@ Window {
         } else if (tabs.listFocused) {
             peek.open = false;
             focusPage();
-        } else if (askSheet.section.activeFocus || rail.askFocused || rail.fillFocused) {
-            if (!railPinned)
+        } else if (askSheet.section.activeFocus || home.askFocused || home.fillFocused) {
+            if (lift)
                 peek.open = true;
             tabs.focusList();
         } else if (shownAsk && shownAsk.kind === "password") {
             // the "Save password?" line in the card: the pinned rail's, or folded the overlay's, which holds it out
-            if (!railPinned)
+            if (lift)
                 peek.open = true;
-            rail.focusAsk();
-        } else if (rail.addFocused && !shownAsk) {
+            home.focusAsk();
+        } else if (home.addFocused && !shownAsk) {
             editAddress();
         } else if (shownAsk) {
             // the ask's sheet over the page, folded or docked
             askSheet.section.focusFirst();
-        } else if (rail.fillShown) {
+        } else if (home.fillShown) {
             // a login field's Fill rows (PLAN.md 7), in the card that shows them: the pinned rail's, or folded the
             // overlay's, brought out first (a hidden item takes no keys); it goes back when they give the keys up
-            if (!railPinned)
+            if (lift)
                 peek.open = true;
-            rail.focusFill();
-        } else if (rail.addShown) {
+            home.focusFill();
+        } else if (home.addShown) {
             // a store page's "Add to Thyris" line, in the same card, before the address
-            if (!railPinned)
+            if (lift)
                 peek.open = true;
-            rail.focusAdd();
+            home.focusAdd();
         } else {
             editAddress();
         }
@@ -3590,6 +3710,7 @@ Window {
     function command(name, ref, arg) {
         const p = sessionModel.pages[ref];
         switch (name) {
+        case "tabsPlace": placeTabs(!tabsTop); break;
         case "reload": views[ref]?.reload(); break;
         case "duplicate": go(p.url, "new", p.thread, p.title, ref, false); break;
         case "mute": toggleMute(ref); break;

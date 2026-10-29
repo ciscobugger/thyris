@@ -19,6 +19,8 @@ public:
     Q_INVOKABLE QString begin(const QStringList &known);
     // Grabs `window` (a window the first one made, PLAN.md 3.17), else the first window.
     Q_INVOKABLE void capture(const QString &name, QObject *window = nullptr);
+    // draws a frame without saving it: offscreen, nothing else does, and a still of the page waits for one
+    Q_INVOKABLE void render();
     Q_INVOKABLE void fail(const QString &message);
     // A PDF named `name` of `pages` A4 pages for the print card's preview (PLAN.md 3.16), as a page would print: `title`
     // over `lines` on the first, `lines` on the rest. Its path, in the throwaway data dir.
