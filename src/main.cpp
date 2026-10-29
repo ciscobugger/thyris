@@ -3,6 +3,7 @@
 #include "disk.h"
 #include "engine.h"
 #include "enginecheck.h"
+#include "extensions.h"
 #include "facts.h"
 #include "glide.h"
 #include "instance.h"
@@ -231,9 +232,17 @@ int main(int argc, char *argv[]) {
     // own blocker stands aside (2026-10-08: the owner's YouTube starts as fast as in their Chrome with it). The checks and
     // shots keep testing Opsis's own.
     const QString ubol = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/browser/extensions/ubol");
-    if (!checkMode && !shotMode && QFile::exists(ubol + QStringLiteral("/manifest.json"))) {
-        switches += " --load-extension=" + QFile::encodeName(ubol);
-        Adblock::extensionBlocks = true;
+    // The extensions a person added in Settings (Extensions) come with it: the engine has no manager, it loads the folders
+    // named here at its start.
+    if (!checkMode && !shotMode) {
+        QStringList load;
+        if (QFile::exists(ubol + QStringLiteral("/manifest.json"))) {
+            load << ubol;
+            Adblock::extensionBlocks = true;
+        }
+        load += Extensions::loadPaths();
+        if (!load.isEmpty())
+            switches += " --load-extension=" + QFile::encodeName(load.join(u','));
     }
     // A link for a browser already running on this profile goes to it before this process starts an engine of its own:
     // started anyway, Chromium's own singleton handed the link to that browser's engine, which opened a plain Chrome

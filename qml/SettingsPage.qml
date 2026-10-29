@@ -123,7 +123,7 @@ OwnPage {
     // Zen's primary password as typed, while its passwords wait for it (the rows are made again as the state changes)
     property string zenPrimary: ""
 
-    readonly property var extensionManager: profile ? profile.extensionManager ?? null : null
+    readonly property var extensionManager: profile ? profile.extensionManager ?? Extensions : null
     // the extensions installed in the profile (not the engine's own, its PDF viewer's); the manager's list tells no change
     // (no notify), so it is read again on its signals
     property var extensions: []
@@ -151,6 +151,8 @@ OwnPage {
             cookies: sub === "clear" && siteData ? (siteData.revision, siteData.allCookies()) : 0, clearing: sub === "clear" ? prefs.clearing : null,
             extensions: extensions,
             extensionsInstall: extensionManager !== null,
+            extensionProblem: extensionManager ? extensionManager.problem ?? "" : "",
+            extensionsRestart: extensionManager ? extensionManager.restartNeeded ?? false : false,
             passwords: { state: Passwords.state, entries: Passwords.entries, removing: Passwords.removing, revealed: revealed },
             zen: { profile: Zen.profile.path ? Zen.profile : null, browser: Zen.browser, state: Zen.state, wrong: Zen.wrong, logins: Zen.logins, run: zenRun,
                    sites: Zen.sites, tabs: Zen.tabs, cookies: prefs.get("zenCookies"), openTabs: prefs.get("zenTabs"),
@@ -218,6 +220,7 @@ OwnPage {
     Connections {
         target: settings.extensionManager
         ignoreUnknownSignals: true
+        function onChanged() { settings.readExtensions() }
         // Qt 6.11 installs an extension disabled (measured): one installed here is meant to run
         function onInstallFinished(extension) {
             if (extension.isInstalled && !extension.isEnabled && extension.error === "")

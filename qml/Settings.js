@@ -524,12 +524,16 @@ function rows(s, sub, filter) {
         ? [{ kind: "note", key: "sites-none", label: "No site has a choice of its own yet. What you set in a site's panel (Ctrl+I) shows here." }]
         : s.siteChoices.map(c => ({ kind: "action", key: "forget:" + c.origin, label: c.host, detail: c.summary, action: "Forget",
                                     words: c.host + " " + c.summary })));
-    // Thyris's engine installs none yet (no extension manager): a Choose that did nothing said so nowhere (Discord: a Web
-    // Store install, then a crash)
+    // The engine has no extension manager: Thyris keeps the added ones itself (src/extensions.cpp) and the engine runs
+    // them from its next start. The Web Store's Add button needs the manager and does nothing here.
     section("extensions", s.extensionsInstall === false
         ? [{ kind: "note", key: "none", label: "Thyris can't add extensions yet. Ads are blocked by uBlock Origin Lite, which comes with it." }]
         : s.extensions.map(e => Object.assign(choice("ext:" + e.id, e.name, e.error ? "Failed: " + e.error : e.enabled ? "on" : "off"), { words: e.name })).concat([
-        { kind: "action", key: "install", label: "Install from a folder or .zip", value: "", action: "Choose" },
+        { kind: "action", key: "install", label: "Add from a folder or .zip", value: "", action: "Choose" },
+    ]).concat(s.extensionProblem ? [{ kind: "note", key: "problem", label: s.extensionProblem }] : [])
+      .concat(s.extensionsRestart ? [{ kind: "note", key: "restart", label: "Changes to extensions start the next time Thyris opens." }] : [])
+      .concat([
+        { kind: "note", key: "store", label: "The Chrome Web Store's Add button doesn't work in Thyris. Download the extension, unpack it or keep the .zip, and add it here." },
         { kind: "note", key: "access", label: "Each extension can read the sites it asks for." },
     ]));
     section("import", s.zen ? importRows(s.zen, s.now) : []);

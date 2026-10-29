@@ -2766,12 +2766,18 @@ QtObject {
           expect: () => { const e = check.own().extensions.find(x => x.name === "Check extension");
               probe.report("     extensions: " + JSON.stringify(check.own().extensions) + "; install path " + check.own().extensionManager.installPath);
               return !!e && e.enabled && check.ownRow("ext:" + e.id).value === "On" } },
+        { name: "it shows beside the notes: start again later, the Web Store's Add button, what extensions read", wait: 600,
+          expect: () => { probe.grab(app, "extensions-added"); const r = check.own().rows;
+              return Extensions.loadPaths().length === 1 && r.some(x => x.key === "restart") && r.some(x => x.key === "store") && r.some(x => x.key === "access") && !r.some(x => x.key === "problem") } },
         { name: "its switch: disabled", wait: 1200,
           act: () => { const e = check.own().extensions.find(x => x.name === "Check extension"); check.clickOwn("own:ext:" + e.id) },
           expect: () => { const e = check.own().extensions.find(x => x.name === "Check extension"); return !!e && !e.enabled && check.ownRow("ext:" + e.id).value === "Off" } },
         { name: "and Remove: uninstalled", wait: 2500,
           act: () => { const e = check.own().extensions.find(x => x.name === "Check extension"); check.clickOwn("own:ext:" + e.id + ":remove") },
-          expect: () => !check.own().extensions.some(x => x.name === "Check extension") },
+          expect: () => !check.own().extensions.some(x => x.name === "Check extension") && Extensions.loadPaths().length === 0 },
+        { name: "Extensions: a folder with no extension in it says why", wait: 2500,
+          act: () => { check.clickOwn("own:install:action"); check.later(() => Picker.answer([probe.fixtureDir("ext-empty")])) },
+          expect: () => { probe.grab(app, "extensions-problem"); const r = check.ownRow("problem"); return !!r && /no manifest\.json/.test(r.label) } },
         { name: "About: Thyris's version and the Chromium it is built on", wait: 200,
           expect: () => { const r = check.ownRow("identity");
               return !!r && r.value === "Version " + Engine.versions.opsis && Engine.versions.chromium !== "" && r.detail === "Built on Chromium " + Engine.versions.chromium.split(".")[0] } },
