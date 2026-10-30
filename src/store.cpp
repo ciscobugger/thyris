@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QThreadPool>
 
 Store::Store(QObject *parent) : QObject(parent) {
     m_dataDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/browser");
@@ -44,11 +45,42 @@ QVariant plain(const QVariant &value) {
 }
 }
 
-bool Store::save(const QString &name, const QVariant &value) const {
+bool Store::write(const QString &name, const QVariant &plainValue) const {
     QSaveFile file(m_dataDir + u'/' + name + QStringLiteral(".json"));
     if (!file.open(QIODevice::WriteOnly))
         return false;
-    file.write(QJsonDocument::fromVariant(plain(value)).toJson(QJsonDocument::Compact));
+    file.write(QJsonDocument::fromVariant(plainValue).toJson(QJsonDocument::Compact));
     file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     return file.commit();
+}
+
+bool Store::save(const QString &name, const QVariant &value) const {
+    {
+        QMutexLocker lock(&m_genLock);
+        ++m_gen[name];
+    }
+    QMutexLocker write(&m_writeLock);
+    return this->write(name, plain(value));
+}
+
+void Store::saveLater(const QString &name, const QVariant &value) {
+    quint64 gen;
+    {
+        QMutexLocker lock(&m_genLock);
+        gen = ++m_gen[name];
+    }
+    // converted here, where the QJSValues live; the worker only serialises and writes
+    QThreadPool::globalInstance()->start([this, name, gen, copy = plain(value)] {
+        QMutexLocker write(&m_writeLock);
+        {
+            QMutexLocker lock(&m_genLock);
+            if (m_gen.value(name) != gen)
+                return;
+        }
+        this->write(name, copy);
+    });
+}
+
+Store::~Store() {
+    QThreadPool::globalInstance()->waitForDone();
 }
