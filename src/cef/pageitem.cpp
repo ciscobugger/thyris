@@ -3622,7 +3622,7 @@ void PageItem::setLifecycleState(int state) {
 }
 
 void PageItem::open() {
-    if (m_client || m_opening || !isComponentComplete() || !window() || width() < 1 || height() < 1)
+    if (m_client || m_opening || m_lifecycle == 2 || !isComponentComplete() || !window() || width() < 1 || height() < 1)
         return;
     m_opening = true;
     QMetaObject::invokeMethod(this, &PageItem::openNow, Qt::QueuedConnection);
