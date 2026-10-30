@@ -4648,10 +4648,14 @@ Window {
             WebStore.startUpdates();
             updateAsker.start();
         }
-        // DevTools used in the last week: a spare is ready 8 s after the start, so the first F12 shows at once too
+        // DevTools used in the last week: a spare is ready 8 s after the start, so the first F12 shows at once too; not on a
+        // machine with under 2 GiB available (a 4 GB one), where its 100 MB and the burst of work cost more than the 1 s saved
         const devTools = Store.load("devtools");
-        if (devTools && Date.now() - devTools.used < 7 * 86400000)
-            spareStart.start();
+        if (devTools && Date.now() - devTools.used < 7 * 86400000) {
+            const m = Facts.systemMemory();
+            if (m.available === undefined || m.available >= 2 * 1024 * 1024 * 1024)
+                spareStart.start();
+        }
         if (devTools && devTools.side === "right")
             root.devToolsSide = "right";
         if (String(root.startUrl) !== "") {
