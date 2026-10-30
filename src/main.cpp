@@ -245,7 +245,7 @@ int main(int argc, char *argv[]) {
     // named here at its start.
     // the extension checks: WEBSTORE_LOAD names a folder the engine runs an extension from (the "extrun" group)
     if (checkMode && qEnvironmentVariableIsSet("WEBSTORE_LOAD"))
-        switches += " --load-extension=" + qgetenv("WEBSTORE_LOAD");
+        switches += " \"--load-extension=" + qgetenv("WEBSTORE_LOAD") + "\"";
     if (!checkMode && !shotMode) {
         QStringList load;
         if (QFile::exists(ubol + QStringLiteral("/manifest.json"))) {
@@ -256,7 +256,8 @@ int main(int argc, char *argv[]) {
         WebStore::startUp();
         load += Extensions::loadPaths();
         if (!load.isEmpty())
-            switches += " --load-extension=" + QFile::encodeName(load.join(u','));
+            // quoted: the list is split on spaces, and a path may hold one
+            switches += " \"--load-extension=" + QFile::encodeName(load.join(u',')) + "\"";
     }
     // A link for a browser already running on this profile goes to it before this process starts an engine of its own:
     // started anyway, Chromium's own singleton handed the link to that browser's engine, which opened a plain Chrome
