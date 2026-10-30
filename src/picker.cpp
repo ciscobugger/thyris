@@ -36,6 +36,10 @@ Picker::Picker(QObject *parent) : QObject(parent) {
     m_watch.setSingleShot(true);
     m_watch.setInterval(5000);
     connect(&m_watch, &QTimer::timeout, this, [this] { if (!m_away) end({}); });
+    // bound on the Files call itself: a hung shell must not keep the pick (and every later click) blocked
+    m_call.setSingleShot(true);
+    m_call.setInterval(20000);
+    connect(&m_call, &QTimer::timeout, this, [this] { end({}); });
     connect(qGuiApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
         if (!m_busy)
             return;
@@ -86,6 +90,7 @@ bool Picker::pick(const QString &label) {
         call->deleteLater();
         if (serial != m_serial)
             return;
+        m_call.stop();
         if (code != 0 || status != QProcess::NormalExit)
             end({});
         else if (m_busy)
@@ -100,6 +105,7 @@ bool Picker::pick(const QString &label) {
     });
     call->start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("files"), QStringLiteral("pick"), QDir::homePath(), shell,
                                                               QStringLiteral("browser"), label});
+    m_call.start();
     return true;
 }
 
@@ -132,6 +138,7 @@ void Picker::end(const QStringList &paths) {
     m_busy = false;
     m_grace.stop();
     m_watch.stop();
+    m_call.stop();
     if (m_relay) {
         QProcess *relay = m_relay;
         m_relay = nullptr;

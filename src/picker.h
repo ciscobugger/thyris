@@ -45,7 +45,7 @@ private:
     void readRelay();
 
     QProcess *m_relay = nullptr;
-    QTimer m_grace, m_watch;
+    QTimer m_grace, m_watch, m_call;
     QString m_label;
     bool m_busy = false;
     bool m_away = false;
