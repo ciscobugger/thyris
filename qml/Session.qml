@@ -46,7 +46,7 @@ QtObject {
     readonly property var current: { revision; return pages[currentPage] ?? null }
     readonly property var currentThread: { revision; return current ? threadById(current.thread) : null }
 
-    property Timer saveTimer: Timer { interval: 800; onTriggered: session.save() }
+    property Timer saveTimer: Timer { interval: 800; onTriggered: session.save(true) }
 
     function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7) }
     function touch() {
@@ -826,13 +826,18 @@ QtObject {
         t.trail = trail.slice(0, 10);
     }
 
-    function save() {
+    // `later`: the debounced save, written off the UI thread; the save at quit is not
+    function save(later) {
         if (offTheRecord)
             return;
         // closed pages are Ctrl+Shift+T's and Earlier's (PLAN.md 3.7)
-        Store.save("threads", { threads: threads, pages: pages, always: always, closed: closed.slice(-300),
-                                currentPage: currentPage, learned: learned, downloads: downloads.slice(-500),
-                                windows: windowRecords ? windowRecords() : [] });
+        const record = { threads: threads, pages: pages, always: always, closed: closed.slice(-300),
+                         currentPage: currentPage, learned: learned, downloads: downloads.slice(-500),
+                         windows: windowRecords ? windowRecords() : [] };
+        if (later === true)
+            Store.saveLater("threads", record);
+        else
+            Store.save("threads", record);
     }
 
     function load() {
