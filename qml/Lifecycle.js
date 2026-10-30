@@ -1,7 +1,7 @@
 .pragma library
 
 // Memory rules (PLAN.md 3.12, DESIGN.md): no page freezes or unloads for the time it goes unseen. The memory net
-// (Main.relieveMemory) unloads one page every 10 s while the machine is low on memory (`low`), the one seen longest
+// (Main.relieveMemory) unloads one page every 10 s (2 s after an unload) while the machine is low on memory (`low`), the one seen longest
 // ago that may go (`pick`). States use WebEngineView.LifecycleState's numbers: 0 live (Active), 1 frozen, 2 unloaded
 // (Discarded).
 
