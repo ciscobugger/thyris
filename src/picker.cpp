@@ -55,10 +55,11 @@ bool Picker::pick(const QString &label) {
     const int serial = ++m_serial;
     m_label = label;
     m_away = QGuiApplication::applicationState() != Qt::ApplicationActive;
-    m_watch.start();
     emit busyChanged();
-    if (dryRun)
+    if (dryRun) {
+        m_watch.start();
         return true;
+    }
 
     QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     if (dir.isEmpty())
@@ -79,11 +80,16 @@ bool Picker::pick(const QString &label) {
     m_relay->start(QStringLiteral("qs"), {QStringLiteral("-p"), shell});
 
     auto *call = new QProcess(this);
-    // no shell to open Files in: the pick is over (unless a later one has begun)
+    // no shell to open Files in: the pick is over (unless a later one has begun). Files has 5 s from the call's end
+    // to take the focus, not from the click: a slow start of Files must not cancel the pick.
     connect(call, &QProcess::finished, this, [this, call, serial](int code, QProcess::ExitStatus status) {
         call->deleteLater();
-        if ((code != 0 || status != QProcess::NormalExit) && serial == m_serial)
+        if (serial != m_serial)
+            return;
+        if (code != 0 || status != QProcess::NormalExit)
             end({});
+        else if (m_busy)
+            m_watch.start();
     });
     connect(call, &QProcess::errorOccurred, this, [this, call, serial](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
