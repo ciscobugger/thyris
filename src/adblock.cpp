@@ -246,8 +246,9 @@ struct SeenLock {
 
 // The engine from the lists and resources under `dataDir`, or null with no lists; and what each list says of itself.
 // uBlock Origin's own lists (ubo-*, and the inc-* files their !#include pulls in) may use trusted scriptlets, as in uBO
-// itself; third-party lists may not. Runs on the UI thread at start and on a worker thread after an update.
-static void *buildEngine(const QString &dataDir, QVariantList *lists) {
+// itself; third-party lists may not. Runs on the UI thread at start and on a worker thread after an update. `build` false
+// only reads what the lists say of themselves (the engine would never be asked).
+static void *buildEngine(const QString &dataDir, QVariantList *lists, bool build = true) {
     QElapsedTimer t;
     t.start();
     QByteArray trusted, other;
@@ -276,6 +277,8 @@ static void *buildEngine(const QString &dataDir, QVariantList *lists) {
         qCWarning(lcAdblock) << "no filter lists in" << listsDir << "- run tools/update-lists; ad blocking is off";
         return nullptr;
     }
+    if (!build)
+        return nullptr;
     QFile resources(dataDir + QStringLiteral("/resources.json"));
     const QByteArray resourcesJson = resources.open(QIODevice::ReadOnly) ? resources.readAll() : QByteArray("[]");
     void *engine = ab_new(trusted.constData(), other.constData(), resourcesJson.constData());
@@ -285,7 +288,8 @@ static void *buildEngine(const QString &dataDir, QVariantList *lists) {
 
 Adblock::Adblock(const QString &dataDir, QObject *parent) : QObject(parent), m_dataDir(dataDir) {
     m_script = QCoreApplication::applicationDirPath() + QStringLiteral("/../tools/update-lists");
-    m_engine = buildEngine(dataDir, &m_lists);
+    // with uBlock Origin Lite blocking nothing asks the engine (requestFilter unset, cosmetic() empty)
+    m_engine = buildEngine(dataDir, &m_lists, !extensionBlocks);
 }
 
 Adblock::~Adblock() {
