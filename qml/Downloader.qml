@@ -77,13 +77,15 @@ QtObject {
         if (r.state === S.DownloadInProgress) {
             session.updateDownload(id, { state: r.isPaused ? "paused" : "running", reason: "" });
         } else if (r.state === S.DownloadCompleted) {
+            // the part file may have been renamed to a free name when the chosen one was taken meanwhile
+            const file = r.downloadFileName, path = r.downloadDirectory + "/" + file;
             session.updateDownload(id, { state: "done", received: r.receivedBytes, total: r.totalBytes > 0 ? r.totalBytes : r.receivedBytes, left: -1,
-                                         finished: Date.now(), warn: Downloads.runsAsProgram(d.file) ? "program" : "" });
+                                         finished: Date.now(), file: file, path: path, warn: Downloads.runsAsProgram(file) ? "program" : "" });
             delete requests[id];
             const from = d.from ?? {};
             // a private window's file keeps no record of where it came from (PLAN.md 3.14)
             if (!session.offTheRecord)
-                Disk.mark(d.path, { "user.xdg.origin.url": d.url, "user.xdg.referrer.url": from.url ?? "", "user.browser.thread": from.thread ?? "" });
+                Disk.mark(path, { "user.xdg.origin.url": d.url, "user.xdg.referrer.url": from.url ?? "", "user.browser.thread": from.thread ?? "" });
             schedule();
         } else if (r.state === S.DownloadCancelled) {
             delete requests[id];
