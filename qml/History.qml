@@ -9,7 +9,7 @@ QtObject {
 
     property var entries: ({})
     property bool offTheRecord: false
-    property Timer saveTimer: Timer { interval: 2000; onTriggered: if (!history.offTheRecord) Store.save("history", history.entries) }
+    property Timer saveTimer: Timer { interval: 2000; onTriggered: if (!history.offTheRecord) { history.bound(); Store.save("history", history.entries) } }
 
     function visit(url, title) {
         if (!/^https?:/.test(url))
