@@ -322,7 +322,8 @@ QString Zip::extract(const QByteArray &zip, const QString &dir, const Limits &li
         at += 46 + nameLen + extraLen + commentLen;
         if (raw.contains('\0'))
             return QObject::tr("The extension has a file name that is not allowed, so nothing was added.");
-        e.name = QString::fromUtf8(raw);
+        // Windows zippers write a backslash between folders
+        e.name = QString::fromUtf8(raw).replace(u'\\', u'/');
         // a symbolic link or any other special file (made on Unix: the mode is the top half of the external attributes)
         if ((madeBy >> 8) == 3) {
             const quint32 type = (external >> 16) & 0170000;
