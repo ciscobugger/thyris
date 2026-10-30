@@ -2675,7 +2675,7 @@ Window {
         running: !root.shotMode
         onTriggered: root.writeRun({})
     }
-    // The memory net (Lifecycle.js, PLAN.md 3.12): every 10 s (2 s once it has unloaded one) while the machine is low on memory, one page of every main
+    // The memory net (Lifecycle.js, PLAN.md 3.12): every 10 s (2 s after one has unloaded) while the machine is low on memory, one page of every main
     // and private window's goes unloaded, the one seen longest ago that may, as Unload in Pages and memory does it (asked
     // first). The first window's alone.
     Timer {
@@ -2695,13 +2695,14 @@ Window {
         const p = Lifecycle.pick(netPages());
         if (!p)
             return;
-        memoryNet.interval = 2000;      // still low after this one: the next goes soon, not after 10 s
         root.memoryAsking[p.id] = true;
         p.owner.unloadPage(p.id, () => {
             delete root.memoryAsking[p.id];
             const url = p.url ?? "", host = PageState.hostOf(url) || url.split(":")[0] + ":";
-            if (p.owner.views[p.id]?.lifecycleState === WebEngineView.LifecycleState.Discarded)
+            if (p.owner.views[p.id]?.lifecycleState === WebEngineView.LifecycleState.Discarded) {
+                memoryNet.interval = 2000;      // freed: look again in 2 s (the reclaim has settled), not after 10 s
                 console.info("memory low (" + Math.round(m.available / 1048576) + " MB available): unloaded " + host);
+            }
         });
     }
     // The pages the net picks from: each view's page, as Lifecycle.unloadable reads it, with the window that has it
