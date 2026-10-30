@@ -107,10 +107,18 @@ void DownloadRequest::update(const Update &u) {
         emit interruptReasonChanged();
     }
     if (u.complete) {
-        // the part-file becomes the file; a file of that name made meanwhile keeps it under the part's name
+        // the part-file becomes the file; a file of that name made meanwhile gets this one a free name instead
         const QString file = m_directory + QLatin1Char('/') + m_fileName;
         if (!QFileInfo::exists(file))
             QFile::rename(partPath(), file);
+        else {
+            const QString name = uniqueName(m_directory, m_fileName);
+            if (QFile::rename(partPath(), m_directory + QLatin1Char('/') + name)) {
+                comingFiles().remove(file);
+                m_fileName = name;
+                emit downloadFileNameChanged();
+            }
+        }
         setState(Completed);
     } else if (u.canceled) {
         QFile::remove(partPath());
